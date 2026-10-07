@@ -24,6 +24,35 @@ In a Claude Code terminal session, type:
 
 Answer `y` to add the marketplace, then press Enter to install for your user. Calm Mode starts on straight away.
 
+### Add the marketplace first, choose a plugin later
+
+To add this marketplace without installing anything yet, type in a Claude Code session:
+
+```
+/plugin marketplace add kulovema2012/calm-mode
+```
+
+or in a terminal:
+
+```
+claude plugin marketplace add kulovema2012/calm-mode
+```
+
+(`https://github.com/kulovema2012/calm-mode.git` works too.) Nothing is installed or turned on, and your band and status line stay as they are. When you are ready, type `/plugin` and pick **calm-mode** or **calm-recap** under Browse plugins, or install one directly:
+
+```
+/plugin install calm-mode@calm-mode
+/plugin install calm-recap@calm-mode
+```
+
+The part after `@` is the marketplace's name. Install one of the two, not both: both draw the band above the prompt.
+
+| Command | Does |
+|---|---|
+| `claude plugin marketplace list` | Shows the marketplaces you have added |
+| `claude plugin marketplace update calm-mode` | Gets the latest plugin list from GitHub |
+| `claude plugin marketplace remove calm-mode` | Removes the marketplace |
+
 ## Just the recap and cache meter?
 
 **[Calm Recap](plugins/calm-recap/README.md)** is a second plugin in this repository with only the Welcome back card and the prompt-cache meter, and the same settings panel; Claude Code otherwise looks as usual. Install one or the other:

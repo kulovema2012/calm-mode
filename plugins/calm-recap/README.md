@@ -26,6 +26,8 @@ In a Claude Code terminal session:
 
 Install **Calm Recap or Calm Mode, not both**: both draw the band above the prompt, and Calm Mode already includes everything Calm Recap does.
 
+To add the marketplace first and choose a plugin later, type `/plugin marketplace add kulovema2012/calm-mode` (or `claude plugin marketplace add kulovema2012/calm-mode` in a terminal). Nothing is installed until you pick one with `/plugin`, or with `/plugin install calm-recap@calm-mode`.
+
 ## What it does
 
 - **Welcome back card.** When Claude has answered and you stay quiet for a while (5 minutes by default), the band above the prompt shows how the answer ended, what Claude did in up to three short points written by Haiku (anything waiting on you is highlighted with ➜), and what you last asked. Press **Got it** or type your next message to clear it.
