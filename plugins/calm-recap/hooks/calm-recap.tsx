@@ -71,11 +71,14 @@ export function normalizeSettings(options: unknown): RecapSettings {
   }
 }
 
-/** The on/off button's text: "● Calm Recap" (○ when off), or "🍃 CALM RECAP ⏻" (⭘ when off) in cyberpunk. */
+/**
+ * The on/off button's text, each theme with its own icon: the calm leaf, "🍃 Calm Recap ●" (○ when off), or in
+ * cyberpunk the neon night city, "🌃 CALM RECAP ⏻" (⭘ when off).
+ */
 export function toggleLabel(settings: RecapSettings, isEnabled: boolean): string {
   return settings.cyberpunk
-    ? `🍃 ${settings.buttonLabel.toUpperCase()} ${isEnabled ? '⏻' : '⭘'}`
-    : `${isEnabled ? '●' : '○'} ${settings.buttonLabel}`
+    ? `🌃 ${settings.buttonLabel.toUpperCase()} ${isEnabled ? '⏻' : '⭘'}`
+    : `🍃 ${settings.buttonLabel} ${isEnabled ? '●' : '○'}`
 }
 
 /** The away times the − and + buttons step through, in minutes; /config takes any value from 1 to 120. */

@@ -3,7 +3,7 @@
 The Welcome back card, the prompt-cache meter and the weather from [Calm Mode](../../README.md), on their own: no checklist, no plan-first rule, no hidden tool rows. Your Claude Code looks exactly as usual until you step away.
 
 ```
-↩ Welcome back · away 18m           📍 Bangkok ⛅ 31°C  ⚙ [ ● Calm Recap ]
+↩ Welcome back · away 18m           📍 Bangkok ⛅ 31°C  ⚙ [ 🍃 Calm Recap ● ]
 ────────────────────────────────────────────────────────────────
 ✓ Answered · took 1m 30s
 ────────────────────────────────────────────────────────────────
@@ -71,7 +71,7 @@ Click **⚙** beside the on/off button. One tab at a time; click a tab or press 
 
 | Tab | Settings |
 |---|---|
-| Display | Cyberpunk (neon look, 🍃 button), Weather, Button label |
+| Display | Cyberpunk (neon look, 🌃 button; the normal look has 🍃), Weather, Button label |
 | Recap | Away after (1 to 120 minutes), Recap style (Band or Pane) |
 | Status line | Cache in status line, Keep warm |
 

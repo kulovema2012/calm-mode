@@ -120,7 +120,7 @@ test('/calm off hides the band and leaves only the button', async ($, on) => {
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await ui.find({ type: 'Text', text: /Understand your request/ })).toBeUndefined()
   const button = await ui.find({ key: 'calm-toggle' })
-  expect(button?.props.label).toBe('○ Calm Mode')
+  expect(button?.props.label).toBe('🍃 Calm Mode ○')
   await ui.unmount()
 })
 
@@ -193,7 +193,7 @@ test('pressing a setting button changes it through /config', async ($, on) => {
   expect((await ui.find({ key: 'set-cyber' }))?.props.label).toBe('◉')
   expect(await ui.find({ type: 'Text', text: /Cyberpunk: On\. Neon pink and cyan look\./ })).toBeDefined()
   await ui.input({ key: 'set-label', text: 'Zen' })
-  expect((await ui.find({ key: 'calm-toggle' }))?.props.label).toBe('🍃 ZEN ⏻')
+  expect((await ui.find({ key: 'calm-toggle' }))?.props.label).toBe('🌃 ZEN ⏻')
   await ui.unmount()
 })
 
@@ -207,7 +207,7 @@ test('cyberpunk theme draws neon rows', { options: { cyberpunk: true, buttonLabe
     expect(await ui.find({ type: 'Text', text: '▸ ' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '▰▰▰▰▰▰▱▱▱▱' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /◢◤ BUILD MY LANDING PAGE/ })).toBeDefined()
-    expect((await ui.find({ key: 'calm-toggle' }))?.props.label).toBe('🍃 NEO ⏻')
+    expect((await ui.find({ key: 'calm-toggle' }))?.props.label).toBe('🌃 NEO ⏻')
     await ui.unmount()
   }
 })

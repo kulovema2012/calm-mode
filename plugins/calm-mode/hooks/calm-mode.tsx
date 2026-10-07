@@ -471,11 +471,14 @@ export function stepAwayMinutes(minutes: number, direction: 1 | -1): number {
   return next ?? minutes
 }
 
-/** The on/off button's text: "● Calm Mode" (○ when off), or "🍃 CALM MODE ⏻" (⭘ when off) in cyberpunk. */
+/**
+ * The on/off button's text, each theme with its own icon: the calm leaf, "🍃 Calm Mode ●" (○ when off), or in
+ * cyberpunk the neon night city, "🌃 CALM MODE ⏻" (⭘ when off).
+ */
 export function toggleLabel(settings: CalmSettings, isEnabled: boolean): string {
   return settings.cyberpunk
-    ? `🍃 ${settings.buttonLabel.toUpperCase()} ${isEnabled ? '⏻' : '⭘'}`
-    : `${isEnabled ? '●' : '○'} ${settings.buttonLabel}`
+    ? `🌃 ${settings.buttonLabel.toUpperCase()} ${isEnabled ? '⏻' : '⭘'}`
+    : `🍃 ${settings.buttonLabel} ${isEnabled ? '●' : '○'}`
 }
 
 async function isHidingToolRows($: Engine) {

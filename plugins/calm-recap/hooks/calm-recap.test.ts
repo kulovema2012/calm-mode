@@ -42,21 +42,21 @@ async function finishTurn($: Engine, reason: 'answer' | 'aborted' = 'answer') {
   await $.turn.complete({ answer: ANSWER, durationMs: 90_000, isAborted: reason === 'aborted', turnId: 't1', reason } as never)
 }
 
-test('helpers: points, wrapping, away steps and the leaf label', () => {
+test('helpers: points, wrapping, away steps and the theme icons', () => {
   expect(fallbackPoints(ANSWER)).toEqual(['Made the pricing cards blue.', 'The footer still needs your logo.'])
   expect(parsePoints('- One\n- Two\n- Three\n- Four')).toEqual(['One', 'Two', 'Three'])
   expect(wrapText('one two three four five', 9)).toEqual(['one two', 'three', 'four five'])
   expect(stepAwayMinutes(5, 1)).toBe(10)
   expect(stepAwayMinutes(1, -1)).toBe(1)
   const settings = { buttonLabel: 'Calm Recap', cyberpunk: false, awayMinutes: 5, recapStyle: 'band', cacheMeter: false, weather: true } as const
-  expect(toggleLabel(settings, true)).toBe('● Calm Recap')
-  expect(toggleLabel({ ...settings, cyberpunk: true }, false)).toBe('🍃 CALM RECAP ⭘')
+  expect(toggleLabel(settings, true)).toBe('🍃 Calm Recap ●')
+  expect(toggleLabel({ ...settings, cyberpunk: true }, false)).toBe('🌃 CALM RECAP ⭘')
 })
 
 test('the band holds only its buttons until there is something to recap', async ($, on) => {
   await start($, on)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect((await ui.find({ key: 'recap-toggle' }))?.props.label).toBe('● Calm Recap')
+  expect((await ui.find({ key: 'recap-toggle' }))?.props.label).toBe('🍃 Calm Recap ●')
   expect(await ui.find({ type: 'Text', text: /Welcome back/ })).toBeUndefined()
   await ui.unmount()
 })
@@ -127,7 +127,7 @@ test('/recap shows the card now; /recap off turns it all off', async ($, on) => 
   await $.command.run({ command: 'recap', args: 'off' } as never)
   await ui.redraw()
   expect(await ui.find({ type: 'Text', text: /Welcome back/ })).toBeUndefined()
-  expect((await ui.find({ key: 'recap-toggle' }))?.props.label).toBe('○ Calm Recap')
+  expect((await ui.find({ key: 'recap-toggle' }))?.props.label).toBe('🍃 Calm Recap ○')
   const refused = await $.command.run({ command: 'recap', args: '' } as never)
   expect(refused.text).toBe('Calm Recap is off. Type /recap on first.')
   await ui.unmount()
@@ -204,14 +204,14 @@ test('the status-line switch runs the installer', async ($, on) => {
   await ui.unmount()
 })
 
-test('cyberpunk: leaf button, neon dashed rules', { options: { cyberpunk: true } }, async ($, on) => {
+test('cyberpunk: night-city button, neon dashed rules', { options: { cyberpunk: true } }, async ($, on) => {
   await start($, on, [
     { role: 'user', text: 'make the pricing cards blue' },
     { role: 'assistant', text: ANSWER },
   ])
   await $.command.run({ command: 'recap', args: '' } as never)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect((await ui.find({ key: 'recap-toggle' }))?.props.label).toBe('🍃 CALM RECAP ⏻')
+  expect((await ui.find({ key: 'recap-toggle' }))?.props.label).toBe('🌃 CALM RECAP ⏻')
   const rules = await ui.findAll({ type: 'Text', text: /^┄{20,}$/ })
   expect(rules.length).toBe(3)
   expect(rules[0]?.props.color).toBe('#ff2bd6')
