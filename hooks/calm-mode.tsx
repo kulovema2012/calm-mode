@@ -1435,7 +1435,11 @@ export function registerCalmMode(on: On, options?: unknown): void {
               : 'stopped'
       // Readable at a glance: short labelled sections, bullets wrapped with a hanging indent, at most 76 columns
       // wide however wide the terminal, and anything waiting on the person in the warning color.
-      const textWidth = Math.max(20, Math.min(columns, 80) - 6)
+      // A rounded frame (double-line neon in cyberpunk) at most 84 columns wide: border and padding take 4.
+      const frameWidth = Math.min(columns, 84)
+      const innerWidth = frameWidth - 4
+      const textWidth = Math.max(16, innerWidth - 4)
+      const titleRoom = Math.max(4, innerWidth - buttonsWidth - 1)
       const statusLine = recap.isResumed
         ? `↻ Resumed session${recap.isCacheCold ? `${theme.sep}cache expired, your next message re-reads everything` : ''}`
         : `${icon}${recap.title}${theme.sep}${outcome}${recap.stepsTotal > 0 ? `${theme.sep}${recap.stepsDone}/${recap.stepsTotal} steps` : ''}`
@@ -1452,35 +1456,43 @@ export function registerCalmMode(on: On, options?: unknown): void {
       const asked = recap.lastAsked === '' ? [] : wrapText(`“${recap.lastAsked}”`, textWidth)
       return (
         <Box flexDirection="column" width={columns} key={`recap-${recapTick}`}>
-          <Box flexDirection="row" justifyContent="space-between" width={columns}>
-            <Box width={headerRoom}>
-              <Text wrap="truncate" bold color={theme.title ?? theme.accent}>
-                {`↩ ${theme.shout('Welcome back')}${theme.sep}away ${awayFor}`}
-              </Text>
+          <Box
+            flexDirection="column"
+            width={frameWidth}
+            borderStyle={settings.cyberpunk ? 'double' : 'round'}
+            borderColor={settings.cyberpunk ? theme.title : theme.accent}
+            paddingX={1}
+          >
+            <Box flexDirection="row" justifyContent="space-between" width={innerWidth}>
+              <Box width={titleRoom}>
+                <Text wrap="truncate" bold color={theme.title ?? theme.accent}>
+                  {`↩ ${theme.shout('Welcome back')}${theme.sep}away ${awayFor}`}
+                </Text>
+              </Box>
+              {buttons}
             </Box>
-            {buttons}
-          </Box>
-          <Text wrap="truncate" color={recap.isResumed ? (recap.isCacheCold ? theme.warn : theme.accent) : recap.phase === 'done' ? theme.done : theme.warn}>
-            {statusLine}
-          </Text>
-          <Text> </Text>
-          <Text bold dimColor={!settings.cyberpunk} color={settings.cyberpunk ? theme.accent : undefined}>
-            {theme.shout(recap.isResumed ? 'Where you left off' : 'What Claude did')}
-          </Text>
-          {bullets}
-          {asked.length === 0 ? null : (
-            <Box flexDirection="column">
-              <Text> </Text>
-              <Text bold dimColor={!settings.cyberpunk} color={settings.cyberpunk ? theme.accent : undefined}>
-                {theme.shout('You last asked')}
-              </Text>
-              {asked.map((line, i) => (
-                <Text key={`asked-${i}`} dimColor wrap="truncate">{`    ${line}`}</Text>
-              ))}
+            <Text wrap="truncate" color={recap.isResumed ? (recap.isCacheCold ? theme.warn : theme.accent) : recap.phase === 'done' ? theme.done : theme.warn}>
+              {statusLine}
+            </Text>
+            <Text> </Text>
+            <Text bold dimColor={!settings.cyberpunk} color={settings.cyberpunk ? theme.accent : undefined}>
+              {theme.shout(recap.isResumed ? 'Where you left off' : 'What Claude did')}
+            </Text>
+            {bullets}
+            {asked.length === 0 ? null : (
+              <Box flexDirection="column">
+                <Text> </Text>
+                <Text bold dimColor={!settings.cyberpunk} color={settings.cyberpunk ? theme.accent : undefined}>
+                  {theme.shout('You last asked')}
+                </Text>
+                {asked.map((line, i) => (
+                  <Text key={`asked-${i}`} dimColor wrap="truncate">{`    ${line}`}</Text>
+                ))}
+              </Box>
+            )}
+            <Box flexDirection="row" justifyContent="flex-end" width={innerWidth}>
+              <Button key="recap-ok" label="Got it" variant="primary" onPress={() => dismissRecap($)} />
             </Box>
-          )}
-          <Box flexDirection="row" justifyContent="flex-end" width={columns}>
-            <Button key="recap-ok" label="Got it" variant="primary" onPress={() => dismissRecap($)} />
           </Box>
           {settingsRow}
         </Box>
