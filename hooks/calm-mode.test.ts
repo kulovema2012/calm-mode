@@ -2,7 +2,10 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { cleanName } from './calm-mode'
+import { clampVolume, cleanName, musicCommand, windowsMusicScript } from './calm-mode'
+
+/** argv of every player the plugin started in the current test. */
+let spawned: string[][] = []
 
 const PLAN_TOOL = 'mcp__calm-mode__plan_steps'
 const PROGRESS_TOOL = 'mcp__calm-mode__report_progress'
@@ -22,7 +25,12 @@ const BAND = {
 
 /** The world beneath the plugin: store, clock, a quiet model, plain tools. */
 async function start($: Engine, on: On, onModelCall: () => void = () => undefined) {
+  spawned = []
   mock.store(on)
+  on('process.spawn', async function* (_$, e) {
+    spawned.push([...e.argv])
+    return { value: { code: 0, signal: null } } as never
+  })
   const clock = mock.clock(on, { now: 1_000_000 })
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
@@ -227,4 +235,72 @@ test('plan_steps says "1 step" for a one-step plan and "N steps" otherwise', asy
   expect(String(one.result)).toBe('Planned 1 step. The first one has started.')
   const two = await $.tool.call({ tool: PLAN_TOOL, steps: ['Read your notes', 'Write the answer'] } as never)
   expect(String(two.result)).toBe('Planned 2 steps. The first one has started.')
+})
+
+// ── Music (v0.3.0) ─────────────────────────────────────────────────────────
+
+test('music command per platform, built-in track by default', () => {
+  const win = musicCommand('C:\\mods\\calm-mode', '', 35)
+  expect(win?.[0]).toBe('powershell')
+  expect(win).toContain('-EncodedCommand')
+  expect(musicCommand('/Users/newk/calm-mode', '', 35)).toBeNull()
+  expect(musicCommand('/Users/newk/calm-mode', '/Users/newk/song.mp3', 35)?.[0]).toBe('/bin/sh')
+  expect(musicCommand('/home/newk/calm-mode', '', 35)).toEqual([
+    'ffplay', '-nodisp', '-loglevel', 'quiet', '-loop', '0', '-volume', '35', '/home/newk/calm-mode/sounds/cyberpunk-loop.wav',
+  ])
+})
+
+test('a music path cannot break out of the PowerShell string', () => {
+  const script = windowsMusicScript("C:/x'; Remove-Item C:/ -Recurse; '.mp3", 35)
+  expect(script).toContain("[Uri]'C:/x''; Remove-Item C:/ -Recurse; ''.mp3'")
+})
+
+test('music plays while Claude works in cyberpunk', { options: { cyberpunk: true } }, async ($, on) => {
+  await start($, on)
+  expect(spawned.length).toBe(1)
+})
+
+test('no music without cyberpunk', async ($, on) => {
+  await start($, on)
+  expect(spawned.length).toBe(0)
+})
+
+test('no music when the music setting is off', { options: { cyberpunk: true, music: false } }, async ($, on) => {
+  await start($, on)
+  expect(spawned.length).toBe(0)
+})
+
+test('the settings row has a music button and a music file field', async ($, on) => {
+  await start($, on)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await ui.press({ key: 'calm-settings' })
+  expect((await ui.find({ key: 'set-music' }))?.props.label).toBe('Music: ON (Cyberpunk only)')
+  expect(await ui.find({ key: 'set-music-file' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('volume is clamped to 0..100 and reaches each player', () => {
+  expect(clampVolume(140)).toBe(100)
+  expect(clampVolume(-5)).toBe(0)
+  expect(clampVolume('loud')).toBe(35)
+  expect(windowsMusicScript('C:/song.mp3', 70)).toContain('$player.Volume = 0.70')
+  expect(musicCommand('/home/newk/calm-mode', '', 80)).toContain('80')
+})
+
+test('the volume buttons step the music volume by 10', async ($, on) => {
+  await start($, on)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await ui.press({ key: 'calm-settings' })
+  expect(await ui.find({ type: 'Text', text: ' Volume 35% ' })).toBeDefined()
+  await ui.press({ key: 'vol-up' })
+  expect(await ui.find({ type: 'Text', text: ' Volume 45% ' })).toBeDefined()
+  await ui.press({ key: 'vol-down' })
+  await ui.press({ key: 'vol-down' })
+  expect(await ui.find({ type: 'Text', text: ' Volume 25% ' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('volume 0 keeps the player off', { options: { cyberpunk: true, musicVolume: 0 } }, async ($, on) => {
+  await start($, on)
+  expect(spawned.length).toBe(0)
 })

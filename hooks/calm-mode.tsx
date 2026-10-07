@@ -213,12 +213,14 @@ const runtime: {
   failuresInARow: number
   isTurnRunning: boolean
   lastApiError: { kind: string; details: string } | null
+  music: { key: string; stop: () => void } | null
 } = {
   frameTimer: null,
   collapseTimer: null,
   failuresInARow: 0,
   isTurnRunning: false,
   lastApiError: null,
+  music: null,
 }
 
 /** Runs the 250ms animation clock only while a job is working or waiting on the person. */
@@ -233,6 +235,7 @@ async function syncFrameTimer($: Engine) {
     runtime.frameTimer.cancel()
     runtime.frameTimer = null
   }
+  await syncMusic($)
 }
 
 async function change($: Engine, fn: (list: Checklist) => Checklist) {
@@ -248,6 +251,7 @@ async function finish($: Engine, fn: (list: Checklist) => Checklist) {
 async function setEnabled($: Engine, isEnabled: boolean) {
   await update($, enabledAtom, () => isEnabled)
   await $.store.set(STORE_KEY, isEnabled)
+  await syncMusic($)
   $.ui.toast(
     isEnabled ? 'Calm Mode on: technical details are hidden' : 'Calm Mode off: showing everything again',
   )
@@ -291,6 +295,9 @@ export const DEFAULT_SETTINGS: CalmSettings = {
   jobNaming: true,
   buttonLabel: DEFAULT_LABEL,
   cyberpunk: false,
+  music: true,
+  musicFile: '',
+  musicVolume: 35,
 }
 
 export const settingsAtom = atom({ plugin: 'calm-mode', key: 'settings' } as const, DEFAULT_SETTINGS)
@@ -307,7 +314,17 @@ export function normalizeSettings(options: unknown): CalmSettings {
     jobNaming: flag('jobNaming', DEFAULT_SETTINGS.jobNaming),
     buttonLabel: label === '' ? DEFAULT_LABEL : label.slice(0, LABEL_LIMIT),
     cyberpunk: flag('cyberpunk', DEFAULT_SETTINGS.cyberpunk),
+    music: flag('music', DEFAULT_SETTINGS.music),
+    musicVolume: clampVolume(raw.musicVolume),
+    musicFile: typeof raw.musicFile === 'string' ? raw.musicFile.trim().replace(/^["']+|["']+$/g, '') : '',
   }
+}
+
+/** Volume as a whole percent from 0 to 100; anything else falls back to the default. */
+export function clampVolume(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.round(Math.min(100, Math.max(0, value)))
+    : DEFAULT_SETTINGS.musicVolume
 }
 
 /** The on/off button's text: "● Calm Mode: ON", or "⚡ CALM MODE//ON" in cyberpunk. */
@@ -329,6 +346,7 @@ async function isHidingToolRows($: Engine) {
 async function setOption<K extends keyof CalmSettings>($: Engine, field: K, value: CalmSettings[K]) {
   const next = normalizeSettings({ ...(await read($, settingsAtom)), [field]: value })
   await update($, settingsAtom, () => next)
+  await syncMusic($)
   const rows = await $.config.list().catch(() => [])
   const row = rows.find(r => r.key === `calm-mode.${field}`) ?? rows.find(r => r.key.startsWith('calm-mode') && r.key.endsWith(`.${field}`))
   if (row === undefined) {
@@ -339,6 +357,119 @@ async function setOption<K extends keyof CalmSettings>($: Engine, field: K, valu
   if (result.deny !== undefined) {
     $.ui.toast('Calm Mode: setting changed for this session only')
   }
+}
+
+// ── Music ───────────────────────────────────────────────────────────────────
+// Cyberpunk background music while Claude works. Claude Code's own player
+// ($.audio.play) only sounds on macOS, so Windows uses a hidden PowerShell
+// MediaPlayer and Linux uses ffplay. The child dies with the module, and the
+// PowerShell script also exits on its own if its parent process goes away.
+
+const BUILT_IN_TRACK = 'sounds/cyberpunk-loop.wav'
+const VOLUME_STEP = 10
+
+/** PowerShell's -EncodedCommand takes UTF-16LE text as base64. */
+function utf16leBase64(text: string): string {
+  let bytes = ''
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i)
+    bytes += String.fromCharCode(code & 0xff, code >> 8)
+  }
+  return btoa(bytes)
+}
+
+/** A looping, hidden player; the path is a single-quoted literal, so it cannot inject code. */
+export function windowsMusicScript(path: string, volume: number): string {
+  const quoted = `'${path.replace(/'/g, "''")}'`
+  return [
+    'Add-Type -AssemblyName PresentationCore',
+    '$parent = (Get-CimInstance Win32_Process -Filter "ProcessId=$PID").ParentProcessId',
+    '$player = New-Object System.Windows.Media.MediaPlayer',
+    `$player.Open([Uri]${quoted})`,
+    `$player.Volume = ${(clampVolume(volume) / 100).toFixed(2)}`,
+    '$player.Play()',
+    'while ($true) {',
+    '  Start-Sleep -Milliseconds 500',
+    '  if (-not (Get-Process -Id $parent -ErrorAction SilentlyContinue)) { break }',
+    '  if ($player.NaturalDuration.HasTimeSpan -and $player.Position -ge $player.NaturalDuration.TimeSpan) {',
+    '    $player.Position = [TimeSpan]::Zero',
+    '    $player.Play()',
+    '  }',
+    '}',
+    '$player.Stop()',
+    '$player.Close()',
+  ].join('\n')
+}
+
+/** The command that loops `file` (empty: the built-in track) here, or null where $.audio.play does it. */
+export function musicCommand(root: string, file: string, volume: number): string[] | null {
+  const level = clampVolume(volume)
+  const isWindows = /^[A-Za-z]:[\\/]/.test(root)
+  const isMac = root.startsWith('/Users/')
+  const sep = isWindows ? '\\' : '/'
+  const path = file === '' ? `${root}${sep}${BUILT_IN_TRACK.split('/').join(sep)}` : file
+  if (isWindows) {
+    return [
+      'powershell',
+      '-NoProfile',
+      '-NonInteractive',
+      '-WindowStyle',
+      'Hidden',
+      '-EncodedCommand',
+      utf16leBase64(windowsMusicScript(path, level)),
+    ]
+  }
+  if (isMac) {
+    return file === ''
+      ? null
+      : ['/bin/sh', '-c', 'while :; do afplay -v "$2" "$1" || exit; done', 'calm-mode', path, (level / 100).toFixed(2)]
+  }
+  return ['ffplay', '-nodisp', '-loglevel', 'quiet', '-loop', '0', '-volume', String(level), path]
+}
+
+/** Starts the loop and hands back the way to stop it. */
+function startMusic($: Engine, file: string, volume: number): () => void {
+  const argv = musicCommand($.plugin.root, file, volume)
+  if (argv === null) {
+    const controller = new AbortController()
+    void $.audio
+      .play({ asset: BUILT_IN_TRACK }, { shouldLoop: true, gain: clampVolume(volume) / 100, signal: controller.signal })
+      .catch(() => undefined)
+    return () => controller.abort()
+  }
+  try {
+    const child = $.process.spawn({ argv })
+    void (async () => {
+      try {
+        for await (const _piece of child) {
+          // The player writes nothing worth showing; draining keeps it alive.
+        }
+      } catch {
+        // No player on this machine: stay quiet.
+      }
+    })()
+    return () => {
+      void Promise.resolve(child.return(undefined as never)).catch(() => undefined)
+    }
+  } catch {
+    return () => undefined
+  }
+}
+
+/** Plays while Claude works with Calm Mode, Cyberpunk and Music all on; stops otherwise. */
+async function syncMusic($: Engine) {
+  const isEnabled = await read($, enabledAtom)
+  const settings = await read($, settingsAtom)
+  const list = await read($, checklistAtom)
+  const isWanted = isEnabled && settings.cyberpunk && settings.music && list?.phase === 'working'
+  // The key holds the file and the volume, so changing either restarts the player.
+  const wanted = isWanted && settings.musicVolume > 0 ? `${settings.musicVolume}|${settings.musicFile}` : null
+  if ((runtime.music?.key ?? null) === wanted) {
+    return
+  }
+  runtime.music?.stop()
+  runtime.music =
+    wanted === null ? null : { key: wanted, stop: startMusic($, settings.musicFile, settings.musicVolume) }
 }
 
 // ── Themes ──────────────────────────────────────────────────────────────────
@@ -820,6 +951,25 @@ export function registerCalmMode(on: On, options?: unknown): void {
             dimColor={!settings.cyberpunk}
             onPress={() => setOption($, 'cyberpunk', !settings.cyberpunk)}
           />
+          <Text> </Text>
+          <Button
+            key="set-music"
+            label={`Music: ${settings.music ? 'ON' : 'OFF'}${settings.cyberpunk ? '' : ' (Cyberpunk only)'}`}
+            dimColor={!settings.music || !settings.cyberpunk}
+            onPress={() => setOption($, 'music', !settings.music)}
+          />
+          <Text> </Text>
+          <Button
+            key="vol-down"
+            label="−"
+            onPress={() => setOption($, 'musicVolume', clampVolume(settings.musicVolume - VOLUME_STEP))}
+          />
+          <Text>{` Volume ${settings.musicVolume}% `}</Text>
+          <Button
+            key="vol-up"
+            label="+"
+            onPress={() => setOption($, 'musicVolume', clampVolume(settings.musicVolume + VOLUME_STEP))}
+          />
         </Box>
         {Input === undefined ? null : (
           <Input
@@ -829,6 +979,16 @@ export function registerCalmMode(on: On, options?: unknown): void {
             value={settings.buttonLabel}
             submitLabel="save"
             onSubmit={value => setOption($, 'buttonLabel', value)}
+          />
+        )}
+        {Input === undefined ? null : (
+          <Input
+            key="set-music-file"
+            label="Music file: "
+            placeholder="built-in synth loop"
+            value={settings.musicFile}
+            submitLabel="save"
+            onSubmit={value => setOption($, 'musicFile', value)}
           />
         )}
       </Box>

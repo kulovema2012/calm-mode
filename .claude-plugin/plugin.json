@@ -1,6 +1,6 @@
 {
   "name": "calm-mode",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Calm Mode: hides tool calls and shows one friendly checklist above the prompt while Claude works.",
   "author": { "name": "Newk" },
   "types": "./types/index.d.ts",
@@ -28,6 +28,24 @@
       "title": "Cyberpunk theme",
       "description": "Neon pink titles, cyan meters and yellow alerts.",
       "default": false
+    },
+    "music": {
+      "type": "boolean",
+      "title": "Cyberpunk music",
+      "description": "Play background music while Claude works, only when the Cyberpunk theme is on.",
+      "default": true
+    },
+    "musicFile": {
+      "type": "string",
+      "title": "Music file",
+      "description": "Full path to your own MP3 or WAV. Leave empty for the built-in synth loop.",
+      "default": ""
+    },
+    "musicVolume": {
+      "type": "number",
+      "title": "Music volume",
+      "description": "Background music volume from 0 to 100 percent.",
+      "default": 35
     }
   }
 }

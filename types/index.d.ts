@@ -34,6 +34,12 @@ export type CalmSettings = {
   buttonLabel: string
   /** Neon pink and cyan look. */
   cyberpunk: boolean
+  /** Play background music while Claude works, in the Cyberpunk theme only. */
+  music: boolean
+  /** Your own audio file (absolute path); empty plays the built-in synth loop. */
+  musicFile: string
+  /** Music volume, 0 to 100 percent; 0 keeps the player off. */
+  musicVolume: number
 }
 
 declare module 'claude-code' {
