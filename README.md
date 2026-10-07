@@ -50,7 +50,8 @@ Button label: Calm Mode
 | Volume | 35% | `[ − ]` and `[ + ]` change it in 10% steps. 0% keeps the music off. |
 | Track | Neon Drive | `[ ♪ Track: … ]` steps through the built-in tracks, then **Shuffle** (a random track each job). |
 | Music file | (empty) | Full path to your own MP3 or WAV. When set, it plays instead of the built-in track. |
-| Away recap | ON | After a job ends, if you stay quiet for **Away after** minutes (default 5, set in `/config`), the band shows a **Welcome back** card. |
+| Away recap | ON | After a job ends, if you stay quiet for a while, the band shows a **Welcome back** card. |
+| Away after | 5m | How long that while is. `[ − ]` and `[ + ]` step through 1, 2, 3, 5, 10, 15, 20, 30, 45, 60, 90 and 120 minutes; `/config` takes any value from 1 to 120. |
 | Cache in status line | OFF | Adds `⚡ cache 87% ▰▰▰▰▰▰▰▰▱▱ 47m` at the right end of your status line. The button (or `/calm statusline on\|off`) edits your status line for you. |
 
 ### Several Claude sessions at once
@@ -111,7 +112,7 @@ Turning it off puts your previous status line back. It follows the same wrapper 
 The same settings appear in `/config` under Calm Mode, and the two always agree.
 
 ```
-◢◤ BUILD MY LANDING PAGE // 01:12           ⚙ [ ⚡ CALM MODE//ON ]
+◢◤ BUILD MY LANDING PAGE // 01:12           ⚙ [ ☁ CALM MODE//ON ]
 ◆ Read your brand notes      ▰▰▰▰▰▰▰▰▰▰  DONE
 ▸ Build the pricing section  ▰▰▰▰▰▰▱▱▱▱  60%
 ◇ Add the contact form       ▱▱▱▱▱▱▱▱▱▱  NEXT

@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { clampVolume, cleanName, mayPlay, fallbackPoints, parsePoints, wrapText, musicCommand, nextTrack, trackName, windowsMusicScript } from './calm-mode'
+import { clampVolume, cleanName, mayPlay, stepAwayMinutes, fallbackPoints, parsePoints, wrapText, musicCommand, nextTrack, trackName, windowsMusicScript } from './calm-mode'
 
 /** argv of every player the plugin started in the current test. */
 let spawned: string[][] = []
@@ -191,7 +191,7 @@ test('pressing a setting button changes it through /config', async ($, on) => {
   expect(writes).toEqual([{ key: 'calm-mode.cyberpunk', value: true }])
   expect((await ui.find({ key: 'set-cyber' }))?.props.label).toBe('Cyberpunk: ON')
   await ui.input({ key: 'set-label', text: 'Zen' })
-  expect((await ui.find({ key: 'calm-toggle' }))?.props.label).toBe('⚡ ZEN//ON')
+  expect((await ui.find({ key: 'calm-toggle' }))?.props.label).toBe('☁ ZEN//ON')
   await ui.unmount()
 })
 
@@ -205,7 +205,7 @@ test('cyberpunk theme draws neon rows', { options: { cyberpunk: true, buttonLabe
     expect(await ui.find({ type: 'Text', text: '▸ ' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '▰▰▰▰▰▰▱▱▱▱' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /◢◤ BUILD MY LANDING PAGE/ })).toBeDefined()
-    expect((await ui.find({ key: 'calm-toggle' }))?.props.label).toBe('⚡ NEO//ON')
+    expect((await ui.find({ key: 'calm-toggle' }))?.props.label).toBe('☁ NEO//ON')
     await ui.unmount()
   }
 })
@@ -579,5 +579,31 @@ test('/calm recap shows the Welcome back card right away', async ($, on) => {
   expect(await ui.find({ type: 'Text', text: /Welcome back/ })).toBeDefined()
   // this session's own last request wins over the saved one
   expect(await ui.find({ type: 'Text', text: /Build my landing page/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('away time steps: 1 to 120 minutes, staying at the ends', () => {
+  expect(stepAwayMinutes(5, 1)).toBe(10)
+  expect(stepAwayMinutes(5, -1)).toBe(3)
+  expect(stepAwayMinutes(7, 1)).toBe(10)
+  expect(stepAwayMinutes(7, -1)).toBe(5)
+  expect(stepAwayMinutes(1, -1)).toBe(1)
+  expect(stepAwayMinutes(120, 1)).toBe(120)
+})
+
+test('the away buttons change how long before the card shows', async ($, on) => {
+  const clock = await start($, on)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await ui.press({ key: 'calm-settings' })
+  expect(await ui.find({ type: 'Text', text: ' Away after 5m ' })).toBeDefined()
+  await ui.press({ key: 'away-down' })
+  await ui.press({ key: 'away-down' })
+  expect(await ui.find({ type: 'Text', text: ' Away after 2m ' })).toBeDefined()
+  await $.tool.call({ tool: PLAN_TOOL, steps: ['Build the page'] } as never)
+  await $.tool.call({ tool: PROGRESS_TOOL, task: 'Build the page', percent: 100 } as never)
+  await $.turn.complete(FINISHED as never)
+  await clock.advance(2 * 60_000)
+  await ui.redraw()
+  expect(await ui.find({ type: 'Text', text: /Welcome back/ })).toBeDefined()
   await ui.unmount()
 })

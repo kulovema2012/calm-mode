@@ -370,10 +370,20 @@ export function clampVolume(value: unknown): number {
     : DEFAULT_SETTINGS.musicVolume
 }
 
-/** The on/off button's text: "● Calm Mode: ON", or "⚡ CALM MODE//ON" in cyberpunk. */
+/** The away times the − and + buttons step through, in minutes; /config takes any value from 1 to 120. */
+const AWAY_STEPS = [1, 2, 3, 5, 10, 15, 20, 30, 45, 60, 90, 120]
+
+/** The next step up (+1) or down (-1) from `minutes`, staying within 1 to 120. */
+export function stepAwayMinutes(minutes: number, direction: 1 | -1): number {
+  const next =
+    direction > 0 ? AWAY_STEPS.find(step => step > minutes) : [...AWAY_STEPS].reverse().find(step => step < minutes)
+  return next ?? minutes
+}
+
+/** The on/off button's text: "● Calm Mode: ON", or "☁ CALM MODE//ON" in cyberpunk. */
 export function toggleLabel(settings: CalmSettings, isEnabled: boolean): string {
   return settings.cyberpunk
-    ? `⚡ ${settings.buttonLabel.toUpperCase()}//${isEnabled ? 'ON' : 'OFF'}`
+    ? `☁ ${settings.buttonLabel.toUpperCase()}//${isEnabled ? 'ON' : 'OFF'}`
     : `${isEnabled ? '●' : '○'} ${settings.buttonLabel}: ${isEnabled ? 'ON' : 'OFF'}`
 }
 
@@ -1428,6 +1438,20 @@ export function registerCalmMode(on: On, options?: unknown): void {
             label={`Away recap: ${settings.awayRecap ? 'ON' : 'OFF'}`}
             dimColor={!settings.awayRecap}
             onPress={() => setOption($, 'awayRecap', !settings.awayRecap)}
+          />
+          <Text> </Text>
+          <Button
+            key="away-down"
+            label="−"
+            dimColor={!settings.awayRecap}
+            onPress={() => setOption($, 'awayMinutes', stepAwayMinutes(settings.awayMinutes, -1))}
+          />
+          <Text dimColor={!settings.awayRecap}>{` Away after ${settings.awayMinutes}m `}</Text>
+          <Button
+            key="away-up"
+            label="+"
+            dimColor={!settings.awayRecap}
+            onPress={() => setOption($, 'awayMinutes', stepAwayMinutes(settings.awayMinutes, 1))}
           />
           <Text> </Text>
           <Button
