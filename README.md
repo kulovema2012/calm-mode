@@ -1,0 +1,46 @@
+# Calm Mode
+
+A Claude Code mod that makes Claude feel calm and friendly for people who aren't technical.
+
+While Claude works, the tool calls, file diffs and command output are hidden. One simple checklist sits above the prompt, so you can always see the plan, what's happening now and how far along it is:
+
+```
+Build my landing page · 1m 12s                      [ ● Calm Mode: ON ]
+✓ Read your brand notes            ██████████  Done
+▶ Build the pricing section        ██████░░░░  60%
+○ Add the contact form             ░░░░░░░░░░  Next
+○ Polish the footer                ░░░░░░░░░░  Up next
+```
+
+The header also tells you when Claude **needs you** (a permission prompt or a question), when it's **stuck** (an error, explained in one plain sentence), when you **stopped** it with Esc, and when it's **all done**.
+
+## Install
+
+In a Claude Code terminal session, type:
+
+```
+/plugin install calm-mode --marketplace kulovema2012/calm-mode
+```
+
+Answer `y` to add the marketplace, then press Enter to install for your user. Calm Mode starts on straight away.
+
+## Turn it on and off
+
+- Click the **[ ● Calm Mode: ON ]** button at the right of the band above the prompt, or
+- type `/calm off` or `/calm on`. Plain `/calm` flips it.
+
+Your choice is remembered after a restart. When Calm Mode is off, every hidden row comes back and only the button stays.
+
+## Good to know
+
+- While Calm Mode is on, Claude has to lay out a plan (2 to 8 plain-English steps) before it uses any other tool. This adds a few extra tokens to each request.
+- Each new request makes one small Haiku call to give the job a short name.
+- Subagents are never blocked.
+
+## For developers
+
+- `hooks/register.tsx` is the entry point; it calls `registerCalmMode(on)` from `hooks/calm-mode.tsx`, so more mods can sit beside it.
+- Shared state lives under the `calm-mode` key (`calmModeEnabled`, `checklist`, `tick`), typed in `types/index.d.ts`.
+- Run the tests with `claude plugin test .` and check the plugin with `claude plugin validate .`.
+
+Made by Newk.

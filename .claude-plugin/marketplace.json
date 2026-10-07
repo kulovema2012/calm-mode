@@ -1,0 +1,6 @@
+{
+  "name": "calm-mode",
+  "description": "Calm Mode for Claude Code: a friendly checklist instead of tool calls.",
+  "owner": { "name": "Newk" },
+  "plugins": [{ "name": "calm-mode", "source": "./" }]
+}
