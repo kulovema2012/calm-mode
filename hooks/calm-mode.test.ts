@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { clampVolume, cleanName, mayPlay, fallbackSummary, musicCommand, nextTrack, trackName, windowsMusicScript } from './calm-mode'
+import { clampVolume, cleanName, mayPlay, fallbackPoints, parsePoints, wrapText, musicCommand, nextTrack, trackName, windowsMusicScript } from './calm-mode'
 
 /** argv of every player the plugin started in the current test. */
 let spawned: string[][] = []
@@ -55,6 +55,7 @@ async function start($: Engine, on: On, onModelCall: () => void = () => undefine
     return { value: undefined } as never
   })
   on('classic.Notification', () => ({}) as never)
+  on('classic.SessionStart', () => ({}) as never)
   on('ui.status', (_$, e) => {
     statuses.push(e)
     return { value: undefined } as never
@@ -386,9 +387,25 @@ test('the status-line button runs the installer and records the choice', async (
   await ui.unmount()
 })
 
-test('fallback summary drops code and markdown', () => {
-  expect(fallbackSummary(['## Done', 'I fixed `src/a.ts`.', '```ts', 'const x = 1', '```', 'All good.'].join(String.fromCharCode(10)))).toBe('Done I fixed . All good.')
-  expect(fallbackSummary('')).toBe('Claude finished without a written reply.')
+test('fallback points: first sentences without code or markdown', () => {
+  const answer = ['## Done', 'I fixed `src/a.ts`.', '```ts', 'const x = 1', '```', 'All good. Ship it! Extra.'].join(String.fromCharCode(10))
+  expect(fallbackPoints(answer)).toEqual(['Done I fixed .', 'All good.', 'Ship it!'])
+  expect(fallbackPoints('')).toEqual(['Claude finished without a written reply.'])
+})
+
+test('Haiku points: dashes and numbers stripped, at most three, "Needs you" kept', () => {
+  const nl = String.fromCharCode(10)
+  expect(parsePoints(['- Added the pricing section', '• Fixed the menu', '', '3) Tidied the footer', '- Needs you: send the logo'].join(nl))).toEqual([
+    'Added the pricing section',
+    'Fixed the menu',
+    'Tidied the footer',
+  ])
+  expect(parsePoints('- Needs you: send the logo')).toEqual(['Needs you: send the logo'])
+})
+
+test('wrapText keeps lines within the width at word boundaries', () => {
+  expect(wrapText('one two three four five', 9)).toEqual(['one two', 'three', 'four five'])
+  expect(wrapText('abcdefghijkl', 5)).toEqual(['abcde', 'fghij', 'kl'])
 })
 
 test('after 5 quiet minutes the band shows a Welcome back card; Got it clears it', async ($, on) => {
@@ -401,8 +418,10 @@ test('after 5 quiet minutes the band shows a Welcome back card; Got it clears it
   await clock.advance(5 * 60_000)
   await ui.redraw()
   expect(await ui.find({ type: 'Text', text: /Welcome back/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /Last you asked: "Build my landing page"/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /Claude said:/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /You last asked/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Build my landing page/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /What Claude did/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^  • \S/ })).toBeDefined()
   await ui.press({ key: 'recap-ok' })
   expect(await ui.find({ type: 'Text', text: /Welcome back/ })).toBeUndefined()
   await ui.unmount()
@@ -465,4 +484,36 @@ test('finishing the job hands the player back', { options: { cyberpunk: true } }
   expect(JSON.parse(files.get(LOCK) ?? '{}').owner).toBe('this-session')
   await $.turn.complete(FINISHED as never)
   expect(JSON.parse(files.get(LOCK) ?? '{}').owner).toBe(null)
+})
+
+// ── Resume recap and readable card (v0.9.0) ────────────────────────────────
+
+test('claude --resume shows Welcome back from the saved conversation', async ($, on) => {
+  on('session.messages', () => ({
+    value: [
+      { role: 'user', text: 'make the pricing cards blue', toolUses: [] },
+      { role: 'assistant', text: 'Made the pricing cards blue. The footer still needs your logo.', toolUses: [] },
+      { role: 'user', text: '<system-reminder>ignore me</system-reminder>', toolUses: [] },
+    ],
+  }) as never)
+  const clock = await start($, on)
+  await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: 7200, prompt_cache_likely_expired: true } as never)
+  await clock.advance(600)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /Welcome back · away 2h/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Resumed session · cache expired/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Where you left off/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /make the pricing cards blue/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /ignore me/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('no resume card with the away recap off', { options: { awayRecap: false } }, async ($, on) => {
+  on('session.messages', () => ({ value: [{ role: 'assistant', text: 'Done.', toolUses: [] }] }) as never)
+  const clock = await start($, on)
+  await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: 600 } as never)
+  await clock.advance(600)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /Welcome back/ })).toBeUndefined()
+  await ui.unmount()
 })

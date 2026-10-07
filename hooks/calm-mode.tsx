@@ -635,34 +635,74 @@ export function shortQuote(text: string): string {
   return line.length > 70 ? `${line.slice(0, 69).trimEnd()}…` : line
 }
 
-/** A free stand-in summary: the start of Claude's answer without code or markdown. */
-export function fallbackSummary(answer: string): string {
-  const plain = answer
+const POINT_LIMIT = 3
+const POINT_CHARS = 110
+const NEEDS_YOU = /^needs you\s*[:\-–]\s*/i
+
+/** Claude's answer as plain prose: no code blocks, inline code, markdown marks or extra spaces. */
+function plainText(answer: string): string {
+  return answer
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/`[^`]*`/g, ' ')
     .replace(/[#>*_|]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-  if (plain === '') {
-    return 'Claude finished without a written reply.'
-  }
-  return plain.length > 160 ? `${plain.slice(0, 159).trimEnd()}…` : plain
 }
 
-async function summarize($: Engine, answer: string): Promise<string | undefined> {
+const clip = (text: string) => (text.length > POINT_CHARS ? `${text.slice(0, POINT_CHARS - 1).trimEnd()}…` : text)
+
+/** A free stand-in summary: the answer's first sentences as up to three short points. */
+export function fallbackPoints(answer: string): string[] {
+  const plain = plainText(answer)
+  if (plain === '') {
+    return ['Claude finished without a written reply.']
+  }
+  const sentences = plain.split(/(?<=[.!?])\s+/).filter(sentence => sentence.length > 0)
+  return sentences.slice(0, POINT_LIMIT).map(clip)
+}
+
+/** Haiku's "- point" lines as clean points; a "Needs you:" prefix is kept for the card to highlight. */
+export function parsePoints(reply: string): string[] {
+  return reply
+    .split('\n')
+    .map(line => line.replace(/^\s*(?:[-•*]|\d+[.)])\s*/, '').trim())
+    .filter(line => line.length > 0)
+    .slice(0, POINT_LIMIT)
+    .map(clip)
+}
+
+async function summarize($: Engine, answer: string): Promise<string[] | undefined> {
   if (answer.trim() === '') {
     return undefined
   }
   const reply = await $.model.complete({
     model: 'haiku',
-    maxTokens: 120,
+    maxTokens: 160,
     timeoutMs: 20000,
     system:
-      'Summarize what the assistant just did or said in one or two short, plain sentences for a non-technical person. ' +
-      'Mention anything that needs their action. No code, no file paths, no markdown.',
+      'Summarize what the assistant did or said for a non-technical person as 1 to 3 lines, each starting with "- ". ' +
+      'Each line at most 12 plain words. If the person must do or decide something, make that the last line and ' +
+      'start it with "Needs you: ". No code, no file paths, no markdown other than the dashes.',
     prompt: answer.slice(0, 4000),
   })
-  return reply.isAnswered ? reply.text.replace(/\s+/g, ' ').trim() : undefined
+  const points = reply.isAnswered ? parsePoints(reply.text) : []
+  return points.length > 0 ? points : undefined
+}
+
+/** Shows the card, keeps "away 18m" current, then swaps in Haiku's points when they arrive. */
+async function presentRecap($: Engine, recap: AwayRecap, answer: string) {
+  await update($, recapAtom, () => recap)
+  // One redraw a minute, never an animation.
+  runtime.recapTicker?.cancel()
+  runtime.recapTicker = $.clock.every(60_000, () => {
+    void update($, tickAtom, n => (n ?? 0) + 1)
+  })
+  const points = await summarize($, answer).catch(() => undefined)
+  if (points !== undefined) {
+    await update($, recapAtom, current =>
+      current !== null && current.jobId === recap.jobId ? { ...current, points } : current,
+    )
+  }
 }
 
 /** Fires once the person has been quiet for the set minutes after a job. */
@@ -673,30 +713,85 @@ async function showRecap($: Engine) {
     return
   }
   const now = await $.clock.now()
-  const recap: AwayRecap = {
-    jobId: list.jobId,
-    title: list.title,
-    phase: list.phase,
-    tookMs: (list.finishedAt ?? now) - list.startedAt,
-    stepsDone: list.tasks.filter(task => task.status === 'done').length,
-    stepsTotal: list.tasks.length,
-    summary: fallbackSummary(runtime.lastAnswer),
-    lastAsked: runtime.lastAsked,
-    awaySince: list.finishedAt ?? now - settings.awayMinutes * 60_000,
-    isShowing: true,
+  await presentRecap(
+    $,
+    {
+      jobId: list.jobId,
+      title: list.title,
+      phase: list.phase,
+      tookMs: (list.finishedAt ?? now) - list.startedAt,
+      stepsDone: list.tasks.filter(task => task.status === 'done').length,
+      stepsTotal: list.tasks.length,
+      points: fallbackPoints(runtime.lastAnswer),
+      lastAsked: runtime.lastAsked,
+      awaySince: list.finishedAt ?? now - settings.awayMinutes * 60_000,
+      isShowing: true,
+      isResumed: false,
+      isCacheCold: false,
+    },
+    runtime.lastAnswer,
+  )
+}
+
+/** A user row that is the person's own words, not a tool result or an injected reminder. */
+const isPersonText = (text: string) => text.trim() !== '' && !text.trimStart().startsWith('<')
+
+/**
+ * On `claude --resume`, everything the card needs is gone with the old process, so it is rebuilt from the saved
+ * conversation: the last reply, the last thing asked, and how long ago that was.
+ */
+async function showResumeRecap($: Engine, secondsAway: number | undefined, isCacheCold: boolean) {
+  const settings = await read($, settingsAtom)
+  if (!settings.awayRecap) {
+    return
   }
-  await update($, recapAtom, () => recap)
-  // Keep "away 18m" current without animating: one redraw a minute.
-  runtime.recapTicker?.cancel()
-  runtime.recapTicker = $.clock.every(60_000, () => {
-    void update($, tickAtom, n => (n ?? 0) + 1)
-  })
-  const summary = await summarize($, runtime.lastAnswer).catch(() => undefined)
-  if (summary !== undefined && summary !== '') {
-    await update($, recapAtom, current =>
-      current !== null && current.jobId === recap.jobId ? { ...current, summary } : current,
-    )
+  const messages = await $.session.messages()
+  const lastAnswer = [...messages].reverse().find(message => message.role === 'assistant' && message.text.trim() !== '')
+  if (lastAnswer === undefined) {
+    return
   }
+  const lastAsked = [...messages].reverse().find(message => message.role === 'user' && isPersonText(message.text))
+  runtime.lastAnswer = lastAnswer.text
+  runtime.lastAsked = lastAsked === undefined ? '' : shortQuote(lastAsked.text)
+  const now = await $.clock.now()
+  await presentRecap(
+    $,
+    {
+      jobId: -1,
+      title: runtime.lastAsked === '' ? 'Your last session' : runtime.lastAsked,
+      phase: 'done',
+      tookMs: 0,
+      stepsDone: 0,
+      stepsTotal: 0,
+      points: fallbackPoints(lastAnswer.text),
+      lastAsked: runtime.lastAsked,
+      awaySince: now - (secondsAway ?? 0) * 1000,
+      isShowing: true,
+      isResumed: true,
+      isCacheCold,
+    },
+    lastAnswer.text,
+  )
+}
+
+/** Breaks `text` into lines of at most `width` characters at spaces. */
+export function wrapText(text: string, width: number): string[] {
+  const lines: string[] = []
+  let line = ''
+  for (const word of text.split(' ')) {
+    if (line === '') {
+      line = word
+    } else if (line.length + 1 + word.length <= width) {
+      line = `${line} ${word}`
+    } else {
+      lines.push(line)
+      line = word
+    }
+  }
+  if (line !== '') {
+    lines.push(line)
+  }
+  return lines.flatMap(long => (long.length > width ? (long.match(new RegExp(`.{1,${width}}`, 'g')) ?? []) : [long]))
 }
 
 async function dismissRecap($: Engine) {
@@ -1077,6 +1172,20 @@ export function registerCalmMode(on: On, options?: unknown): void {
     return next(e)
   })
 
+  // `claude --resume`: rebuild the Welcome back card from the saved conversation.
+  on('classic.SessionStart', async ($, e, next) => {
+    const started = await next(e)
+    if (e.source === 'resume') {
+      // After session.start has loaded the settings this card depends on.
+      $.clock.after(500, () => {
+        void showResumeRecap($, e.seconds_since_last_response, e.prompt_cache_likely_expired === true).catch(
+          () => undefined,
+        )
+      })
+    }
+    return started
+  })
+
   on('classic.StopFailure', async ($, e, next) => {
     runtime.lastApiError = { kind: e.error, details: e.error_details ?? '' }
     await change($, list =>
@@ -1324,6 +1433,23 @@ export function registerCalmMode(on: On, options?: unknown): void {
             : recap.phase === 'stuck'
               ? 'stuck'
               : 'stopped'
+      // Readable at a glance: short labelled sections, bullets wrapped with a hanging indent, at most 76 columns
+      // wide however wide the terminal, and anything waiting on the person in the warning color.
+      const textWidth = Math.max(20, Math.min(columns, 80) - 6)
+      const statusLine = recap.isResumed
+        ? `↻ Resumed session${recap.isCacheCold ? `${theme.sep}cache expired, your next message re-reads everything` : ''}`
+        : `${icon}${recap.title}${theme.sep}${outcome}${recap.stepsTotal > 0 ? `${theme.sep}${recap.stepsDone}/${recap.stepsTotal} steps` : ''}`
+      const bullets = recap.points.flatMap((point, p) => {
+        const needsYou = NEEDS_YOU.test(point)
+        const text = needsYou ? point.replace(NEEDS_YOU, '') : point
+        const lines = wrapText(needsYou ? `Needs you: ${text}` : text, textWidth)
+        return lines.map((line, i) => (
+          <Text key={`point-${p}-${i}`} wrap="truncate" color={needsYou ? theme.warn : undefined} bold={needsYou && i === 0}>
+            {`${i === 0 ? (needsYou ? '  ➜ ' : '  • ') : '    '}${line}`}
+          </Text>
+        ))
+      })
+      const asked = recap.lastAsked === '' ? [] : wrapText(`“${recap.lastAsked}”`, textWidth)
       return (
         <Box flexDirection="column" width={columns} key={`recap-${recapTick}`}>
           <Box flexDirection="row" justifyContent="space-between" width={columns}>
@@ -1334,11 +1460,25 @@ export function registerCalmMode(on: On, options?: unknown): void {
             </Box>
             {buttons}
           </Box>
-          <Text wrap="truncate" color={recap.phase === 'done' ? theme.done : theme.warn}>
-            {`${icon}${recap.title}${theme.sep}${outcome}${theme.sep}${recap.stepsDone}/${recap.stepsTotal} steps`}
+          <Text wrap="truncate" color={recap.isResumed ? (recap.isCacheCold ? theme.warn : theme.accent) : recap.phase === 'done' ? theme.done : theme.warn}>
+            {statusLine}
           </Text>
-          <Text wrap="wrap">{`Claude said: ${recap.summary}`}</Text>
-          {recap.lastAsked === '' ? null : <Text dimColor wrap="truncate">{`Last you asked: "${recap.lastAsked}"`}</Text>}
+          <Text> </Text>
+          <Text bold dimColor={!settings.cyberpunk} color={settings.cyberpunk ? theme.accent : undefined}>
+            {theme.shout(recap.isResumed ? 'Where you left off' : 'What Claude did')}
+          </Text>
+          {bullets}
+          {asked.length === 0 ? null : (
+            <Box flexDirection="column">
+              <Text> </Text>
+              <Text bold dimColor={!settings.cyberpunk} color={settings.cyberpunk ? theme.accent : undefined}>
+                {theme.shout('You last asked')}
+              </Text>
+              {asked.map((line, i) => (
+                <Text key={`asked-${i}`} dimColor wrap="truncate">{`    ${line}`}</Text>
+              ))}
+            </Box>
+          )}
           <Box flexDirection="row" justifyContent="flex-end" width={columns}>
             <Button key="recap-ok" label="Got it" variant="primary" onPress={() => dismissRecap($)} />
           </Box>

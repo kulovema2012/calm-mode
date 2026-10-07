@@ -61,7 +61,7 @@ const settings = readSettings();
 
 // Re-runs the status line this often (seconds) so "54m left" counts down while you are idle. Claude Code also
 // re-runs it on its own the moment the cache expires, so the cold state never waits for this.
-const REFRESH_SECONDS = 30;
+const REFRESH_SECONDS = 60;
 
 function readSidecar() {
   try {
@@ -76,7 +76,10 @@ if (action === 'install') {
   fs.copyFileSync(path.join(HERE, 'cache-statusline.mjs'), SCRIPT);
   const hasOwnRefresh = typeof settings.statusLine?.refreshInterval === 'number';
   if (isInstalled(settings)) {
-    if (!hasOwnRefresh) {
+    if (readSidecar().addedRefreshInterval && settings.statusLine.refreshInterval !== REFRESH_SECONDS) {
+      // ours, from an older version (30 s): move it to the current, cheaper interval
+      writeSettings({ ...settings, statusLine: { ...settings.statusLine, refreshInterval: REFRESH_SECONDS } });
+    } else if (!hasOwnRefresh) {
       // installs from before the countdown: add the refresh and remember that it is ours to remove
       fs.writeFileSync(SIDECAR, `${JSON.stringify({ ...readSidecar(), addedRefreshInterval: true }, null, 2)}\n`);
       writeSettings({ ...settings, statusLine: { ...settings.statusLine, refreshInterval: REFRESH_SECONDS } });

@@ -61,8 +61,12 @@ export type AwayRecap = {
   tookMs: number
   stepsDone: number
   stepsTotal: number
-  /** One or two plain sentences on what Claude said or did. */
-  summary: string
+  /** Up to three short points on what Claude said or did; one starting "Needs you:" is highlighted. */
+  points: string[]
+  /** Rebuilt from the saved conversation after `claude --resume`. */
+  isResumed: boolean
+  /** The prompt cache expired while the person was away, so the next message re-reads everything. */
+  isCacheCold: boolean
   /** The person's last prompt, shortened. */
   lastAsked: string
   /** When the job ended, which is when "away" started. */
