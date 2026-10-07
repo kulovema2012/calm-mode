@@ -386,9 +386,6 @@ async function setOption<K extends keyof CalmSettings>($: Engine, field: K, valu
   const next = normalizeSettings({ ...(await read($, settingsAtom)), [field]: value })
   await update($, settingsAtom, () => next)
   await syncMusic($)
-  if (!next.cacheMeter) {
-    $.ui.status(undefined)
-  }
   const rows = await $.config.list().catch(() => [])
   const row = rows.find(r => r.key === `calm-mode.${field}`) ?? rows.find(r => r.key.startsWith('calm-mode') && r.key.endsWith(`.${field}`))
   if (row === undefined) {
@@ -533,6 +530,7 @@ async function syncMusic($: Engine) {
 // sentence summary, and what they last asked. Typing or "Got it" clears it.
 
 export const recapAtom = atom({ plugin: 'calm-mode', key: 'recap' } as const, null)
+export const cacheAtom = atom({ plugin: 'calm-mode', key: 'cacheLine' } as const, null)
 
 /** The person's prompt, first line only, at most 70 characters. */
 export function shortQuote(text: string): string {
@@ -617,8 +615,8 @@ async function dismissRecap($: Engine) {
 // ── Cache meter ─────────────────────────────────────────────────────────────
 
 /**
- * The status line for one turn: the share of prompt tokens the prompt cache
- * served. Undefined when the turn read no prompt at all.
+ * The band's cache meter for one turn: the share of prompt tokens the prompt
+ * cache served. Undefined when the turn read no prompt at all.
  */
 export function cacheLine(usage: {
   input_tokens: number
@@ -631,9 +629,9 @@ export function cacheLine(usage: {
     return undefined
   }
   if (read === 0 && usage.cache_creation_input_tokens > 0) {
-    return '⚡ cache 0% · warming up'
+    return '⚡ cache warming up'
   }
-  return `⚡ cache ${Math.round((read / total) * 100)}% hit`
+  return `⚡ cache ${Math.round((read / total) * 100)}%`
 }
 
 // ── Themes ──────────────────────────────────────────────────────────────────
@@ -704,6 +702,8 @@ export function registerCalmMode(on: On, options?: unknown): void {
     const stored = await $.store.get(STORE_KEY)
     await update($, enabledAtom, () => (typeof stored === 'boolean' ? stored : true))
     await update($, settingsAtom, () => configured)
+    // Versions before 0.5.1 pinned the meter in the status line; take it down.
+    $.ui.status(undefined)
 
     await $.tool.register({
       name: 'plan_steps',
@@ -975,11 +975,9 @@ export function registerCalmMode(on: On, options?: unknown): void {
     runtime.isTurnRunning = false
     runtime.lastAnswer = e.answer
     const settings = await read($, settingsAtom)
-    if (settings.cacheMeter && e.usage !== undefined) {
-      const line = cacheLine(e.usage)
-      if (line !== undefined) {
-        $.ui.status(line)
-      }
+    const line = e.usage === undefined ? undefined : cacheLine(e.usage)
+    if (line !== undefined) {
+      await update($, cacheAtom, () => line)
     }
     runtime.awayTimer?.cancel()
     runtime.awayTimer = settings.awayRecap
@@ -1082,6 +1080,8 @@ export function registerCalmMode(on: On, options?: unknown): void {
     const settings = await read($, settingsAtom)
     const isSettingsOpen = await read($, settingsOpenAtom)
     const recap = isEnabled ? await read($, recapAtom) : null
+    const cache = settings.cacheMeter ? await read($, cacheAtom) : null
+    const cacheText = cache === null ? '' : `${cache}  `
     const theme = settings.cyberpunk ? CYBERPUNK : CLASSIC
     const list = isEnabled ? await read($, checklistAtom) : null
     const tick = list !== null && (list.phase === 'working' || list.phase === 'needsYou') ? await read($, tickAtom) : 0
@@ -1091,6 +1091,11 @@ export function registerCalmMode(on: On, options?: unknown): void {
     const label = toggleLabel(settings, isEnabled)
     const buttons = (
       <Box flexDirection="row">
+        {cacheText === '' ? null : (
+          <Text dimColor={!settings.cyberpunk} color={settings.cyberpunk ? theme.accent : undefined}>
+            {cacheText}
+          </Text>
+        )}
         <Button
           key="calm-settings"
           label={theme.gear}
@@ -1108,7 +1113,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
         />
       </Box>
     )
-    const buttonsWidth = theme.gear.length + 1 + label.length + 4
+    const buttonsWidth = cacheText.length + theme.gear.length + 1 + label.length + 4
     const headerRoom = Math.max(4, columns - buttonsWidth - 1)
 
     const settingsRow = isSettingsOpen ? (

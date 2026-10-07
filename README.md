@@ -51,7 +51,7 @@ Button label: Calm Mode
 | Track | Neon Drive | `[ ♪ Track: … ]` steps through the built-in tracks, then **Shuffle** (a random track each job). |
 | Music file | (empty) | Full path to your own MP3 or WAV. When set, it plays instead of the built-in track. |
 | Away recap | ON | After a job ends, if you stay quiet for **Away after** minutes (default 5, set in `/config`), the band shows a **Welcome back** card. |
-| Cache meter | ON | Shows how much of the last turn came from the prompt cache, pinned under the prompt. |
+| Cache meter | ON | Shows how much of the last turn came from the prompt cache, at the right of the band beside ⚙. |
 
 ### Built-in tracks
 
@@ -78,7 +78,7 @@ Last you asked: "make the pricing cards blue"
 
 ### Cache meter
 
-`⚡ cache 87% hit` means 87% of the last turn's prompt was read from the prompt cache, which is cheaper and faster. `⚡ cache 0% · warming up` means the cache was just written and the next turn should hit it.
+`⚡ cache 87%` (at the right of the band, beside ⚙) means 87% of the last turn's prompt was read from the prompt cache, which is cheaper and faster. `⚡ cache warming up` means the cache was just written and the next turn should hit it.
 
 The same settings appear in `/config` under Calm Mode, and the two always agree.
 

@@ -1,6 +1,6 @@
 {
   "name": "calm-mode",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Calm Mode: hides tool calls and shows one friendly checklist above the prompt while Claude works.",
   "author": { "name": "Newk" },
   "types": "./types/index.d.ts",
@@ -69,7 +69,7 @@
     "cacheMeter": {
       "type": "boolean",
       "title": "Cache meter",
-      "description": "Show how much of the last turn's prompt came from the prompt cache, in the status line under the prompt.",
+      "description": "Show how much of the last turn's prompt came from the prompt cache, at the right of the band above the prompt.",
       "default": true
     }
   }

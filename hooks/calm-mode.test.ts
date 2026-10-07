@@ -350,21 +350,26 @@ test('the track button shows and steps the track', async ($, on) => {
 const FINISHED = { answer: 'Added the pricing section. The footer needs your logo.', durationMs: 1000, isAborted: false, turnId: 't1', reason: 'answer' } as const
 
 test('cache line: share of prompt tokens read from cache', () => {
-  expect(cacheLine({ input_tokens: 100, cache_read_input_tokens: 870, cache_creation_input_tokens: 30 })).toBe('⚡ cache 87% hit')
-  expect(cacheLine({ input_tokens: 50, cache_read_input_tokens: 0, cache_creation_input_tokens: 9000 })).toBe('⚡ cache 0% · warming up')
+  expect(cacheLine({ input_tokens: 100, cache_read_input_tokens: 870, cache_creation_input_tokens: 30 })).toBe('⚡ cache 87%')
+  expect(cacheLine({ input_tokens: 50, cache_read_input_tokens: 0, cache_creation_input_tokens: 9000 })).toBe('⚡ cache warming up')
   expect(cacheLine({ input_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 })).toBeUndefined()
 })
 
-test('the status line shows the cache hit after a turn', async ($, on) => {
+test('the band shows the cache hit at the right after a turn, and no status line', async ($, on) => {
   await start($, on)
   await $.turn.complete({ ...FINISHED, usage: { model: 'm', input_tokens: 100, output_tokens: 5, cache_read_input_tokens: 900, cache_creation_input_tokens: 0 } } as never)
-  expect(JSON.stringify(statuses)).toContain('⚡ cache 90% hit')
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: '⚡ cache 90%  ' })).toBeDefined()
+  await ui.unmount()
+  expect(JSON.stringify(statuses)).not.toContain('cache')
 })
 
 test('no cache line with the meter off', { options: { cacheMeter: false } }, async ($, on) => {
   await start($, on)
   await $.turn.complete({ ...FINISHED, usage: { model: 'm', input_tokens: 100, output_tokens: 5, cache_read_input_tokens: 900, cache_creation_input_tokens: 0 } } as never)
-  expect(JSON.stringify(statuses)).not.toContain('cache 90%')
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /cache/ })).toBeUndefined()
+  await ui.unmount()
 })
 
 test('fallback summary drops code and markdown', () => {

@@ -79,6 +79,8 @@ declare module 'claude-code' {
       settings: CalmSettings
       isSettingsOpen: boolean
       recap: AwayRecap | null
+      /** The last turn's cache meter text, e.g. "⚡ cache 87%". */
+      cacheLine: string | null
     }
   }
 }
