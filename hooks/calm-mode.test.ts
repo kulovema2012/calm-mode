@@ -564,3 +564,20 @@ test('sections of the Welcome back card are split by thin rules', async ($, on) 
   expect((await ui.findAll({ type: 'Text', text: /^─{20,}$/ })).length).toBe(2)
   await ui.unmount()
 })
+
+test('/calm recap shows the Welcome back card right away', async ($, on) => {
+  on('session.messages', () => ({
+    value: [
+      { role: 'user', text: 'make the pricing cards blue', toolUses: [] },
+      { role: 'assistant', text: 'Made the cards blue.', toolUses: [] },
+    ],
+  }) as never)
+  await start($, on)
+  const ran = await $.command.run({ command: 'calm', args: 'recap' } as never)
+  expect(ran.text).toBe('Showing the Welcome back card above the prompt.')
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /Welcome back/ })).toBeDefined()
+  // this session's own last request wins over the saved one
+  expect(await ui.find({ type: 'Text', text: /Build my landing page/ })).toBeDefined()
+  await ui.unmount()
+})

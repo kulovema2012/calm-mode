@@ -697,12 +697,16 @@ async function presentRecap($: Engine, recap: AwayRecap, answer: string) {
   runtime.recapTicker = $.clock.every(60_000, () => {
     void update($, tickAtom, n => (n ?? 0) + 1)
   })
-  const points = await summarize($, answer).catch(() => undefined)
-  if (points !== undefined) {
-    await update($, recapAtom, current =>
-      current !== null && current.jobId === recap.jobId ? { ...current, points } : current,
+  // The card is up now; Haiku's points replace the stand-in whenever they arrive.
+  void summarize($, answer)
+    .then(points =>
+      points === undefined
+        ? undefined
+        : update($, recapAtom, current =>
+            current !== null && current.jobId === recap.jobId ? { ...current, points } : current,
+          ),
     )
-  }
+    .catch(() => undefined)
 }
 
 /** Fires once the person has been quiet for the set minutes after a job. */
@@ -730,6 +734,38 @@ async function showRecap($: Engine) {
       isCacheCold: false,
     },
     runtime.lastAnswer,
+  )
+}
+
+/**
+ * `/calm recap`: the card right now. The job comes from the checklist when there is one; the last reply and
+ * request come from the saved conversation, so it works after a reload or a resume too.
+ */
+async function showRecapNow($: Engine) {
+  const messages = await $.session.messages()
+  const lastReply = [...messages].reverse().find(message => message.role === 'assistant' && message.text.trim() !== '')
+  const lastRequest = [...messages].reverse().find(message => message.role === 'user' && isPersonText(message.text))
+  const answer = runtime.lastAnswer !== '' ? runtime.lastAnswer : (lastReply?.text ?? '')
+  const asked = runtime.lastAsked !== '' ? runtime.lastAsked : lastRequest === undefined ? '' : shortQuote(lastRequest.text)
+  const list = await read($, checklistAtom)
+  const now = await $.clock.now()
+  await presentRecap(
+    $,
+    {
+      jobId: list?.jobId ?? -1,
+      title: list?.title ?? (asked === '' ? 'Your session' : asked),
+      phase: list?.phase ?? 'done',
+      tookMs: list === null ? 0 : (list.finishedAt ?? now) - list.startedAt,
+      stepsDone: list?.tasks.filter(task => task.status === 'done').length ?? 0,
+      stepsTotal: list?.tasks.length ?? 0,
+      points: fallbackPoints(answer),
+      lastAsked: asked,
+      awaySince: list?.finishedAt ?? now,
+      isShowing: true,
+      isResumed: false,
+      isCacheCold: false,
+    },
+    answer,
   )
 }
 
@@ -942,8 +978,8 @@ export function registerCalmMode(on: On, options?: unknown): void {
     })
     await $.command.register({
       name: 'calm',
-      description: 'Turn Calm Mode on or off (no argument flips it); statusline on|off adds the cache meter',
-      argumentHint: '[on|off] | statusline on|off',
+      description: 'Turn Calm Mode on or off (no argument flips it); recap shows the Welcome back card; statusline on|off adds the cache meter',
+      argumentHint: '[on|off] | recap | statusline on|off',
       immediate: true,
     })
 
@@ -955,6 +991,10 @@ export function registerCalmMode(on: On, options?: unknown): void {
     const statusLine = /^statusline\s+(on|off)$/.exec(arg)
     if (statusLine !== null) {
       return { text: await setCacheMeter($, statusLine[1] === 'on') }
+    }
+    if (arg === 'recap') {
+      await showRecapNow($)
+      return { text: 'Showing the Welcome back card above the prompt.' }
     }
     const isEnabled = arg === 'on' ? true : arg === 'off' ? false : !(await read($, enabledAtom))
     await setEnabled($, isEnabled)
