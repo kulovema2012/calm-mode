@@ -511,7 +511,9 @@ export function registerCalmMode(on: On, options?: unknown): void {
       await change($, current => withPlan(current, names))
     }
     await syncFrameTimer($)
-    return { result: `Planned ${names.length} steps. The first one has started.` }
+    return {
+      result: `Planned ${names.length} ${names.length === 1 ? 'step' : 'steps'}. The first one has started.`,
+    }
   })
 
   on('tool.call', { tool: PROGRESS_TOOL }, async ($, e) => {

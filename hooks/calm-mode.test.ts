@@ -220,3 +220,11 @@ test('job naming off never calls the model', { options: { jobNaming: false } }, 
   await clock.advance(10)
   expect(modelCalls).toBe(0)
 })
+
+test('plan_steps says "1 step" for a one-step plan and "N steps" otherwise', async ($, on) => {
+  await start($, on)
+  const one = await $.tool.call({ tool: PLAN_TOOL, steps: ['Reply to your test'] } as never)
+  expect(String(one.result)).toBe('Planned 1 step. The first one has started.')
+  const two = await $.tool.call({ tool: PLAN_TOOL, steps: ['Read your notes', 'Write the answer'] } as never)
+  expect(String(two.result)).toBe('Planned 2 steps. The first one has started.')
+})
