@@ -31,6 +31,32 @@ Answer `y` to add the marketplace, then press Enter to install for your user. Ca
 
 Your choice is remembered after a restart. When Calm Mode is off, every hidden row comes back and only the button stays.
 
+## Settings
+
+Click the **⚙** next to the on/off button to open the settings row:
+
+```
+[ Hide tool rows: ON ] [ Job naming: ON ] [ Cyberpunk: OFF ]
+Button label: Calm Mode
+```
+
+| Setting | Default | What it does |
+|---|---|---|
+| Hide tool rows | ON | Hides tool calls and their output while Calm Mode is on. OFF keeps the checklist and shows every row. |
+| Job naming | ON | Asks Haiku for a short job name. OFF saves that call and uses your first line instead. |
+| Cyberpunk theme | OFF | Neon pink titles, cyan meters, yellow alerts. |
+| Button label | Calm Mode | The words on the on/off button (up to 20 characters). Type and press Enter. |
+
+The same settings appear in `/config` under Calm Mode, and the two always agree.
+
+```
+◢◤ BUILD MY LANDING PAGE // 01:12           ⚙ [ ⚡ CALM MODE//ON ]
+◆ Read your brand notes      ▰▰▰▰▰▰▰▰▰▰  DONE
+▸ Build the pricing section  ▰▰▰▰▰▰▱▱▱▱  60%
+◇ Add the contact form       ▱▱▱▱▱▱▱▱▱▱  NEXT
+◇ Polish the footer          ▱▱▱▱▱▱▱▱▱▱  QUEUED
+```
+
 ## Good to know
 
 - While Calm Mode is on, Claude has to lay out a plan (2 to 8 plain-English steps) before it uses any other tool. This adds a few extra tokens to each request.

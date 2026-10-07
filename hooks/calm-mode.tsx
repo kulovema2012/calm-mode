@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, On, Timer } from 'claude-code'
 
-import type { Checklist, ChecklistTask } from '../types'
+import type { CalmSettings, Checklist, ChecklistTask } from '../types'
 
 type Engine = EngineInterface
 
@@ -279,11 +279,136 @@ async function nameJob($: Engine, jobId: number, prompt: string) {
   await change($, list => (list.jobId === jobId ? { ...list, title: words } : list))
 }
 
-export function registerCalmMode(on: On): void {
+// ── Settings ────────────────────────────────────────────────────────────────
+// The /config rows (userConfig) are the source of truth. session.start mirrors
+// them into $.state so every drawing redraws when one changes.
+
+const DEFAULT_LABEL = 'Calm Mode'
+const LABEL_LIMIT = 20
+
+export const DEFAULT_SETTINGS: CalmSettings = {
+  hideToolRows: true,
+  jobNaming: true,
+  buttonLabel: DEFAULT_LABEL,
+  cyberpunk: false,
+}
+
+export const settingsAtom = atom({ plugin: 'calm-mode', key: 'settings' } as const, DEFAULT_SETTINGS)
+export const settingsOpenAtom = atom({ plugin: 'calm-mode', key: 'isSettingsOpen' } as const, false)
+
+/** Reads the plugin's options, falling back to the defaults for anything missing or malformed. */
+export function normalizeSettings(options: unknown): CalmSettings {
+  const raw = (typeof options === 'object' && options !== null ? options : {}) as Record<string, unknown>
+  const flag = (key: keyof CalmSettings, fallback: boolean) =>
+    typeof raw[key] === 'boolean' ? (raw[key] as boolean) : fallback
+  const label = typeof raw.buttonLabel === 'string' ? raw.buttonLabel.replace(/\s+/g, ' ').trim() : ''
+  return {
+    hideToolRows: flag('hideToolRows', DEFAULT_SETTINGS.hideToolRows),
+    jobNaming: flag('jobNaming', DEFAULT_SETTINGS.jobNaming),
+    buttonLabel: label === '' ? DEFAULT_LABEL : label.slice(0, LABEL_LIMIT),
+    cyberpunk: flag('cyberpunk', DEFAULT_SETTINGS.cyberpunk),
+  }
+}
+
+/** The on/off button's text: "● Calm Mode: ON", or "⚡ CALM MODE//ON" in cyberpunk. */
+export function toggleLabel(settings: CalmSettings, isEnabled: boolean): string {
+  return settings.cyberpunk
+    ? `⚡ ${settings.buttonLabel.toUpperCase()}//${isEnabled ? 'ON' : 'OFF'}`
+    : `${isEnabled ? '●' : '○'} ${settings.buttonLabel}: ${isEnabled ? 'ON' : 'OFF'}`
+}
+
+async function isHidingToolRows($: Engine) {
+  return (await read($, enabledAtom)) && (await read($, settingsAtom)).hideToolRows
+}
+
+/**
+ * Changes one setting through /config, so the menu and the band stay in step.
+ * The module reloads with the new options; the state mirror is written first
+ * so the band redraws at once either way.
+ */
+async function setOption<K extends keyof CalmSettings>($: Engine, field: K, value: CalmSettings[K]) {
+  const next = normalizeSettings({ ...(await read($, settingsAtom)), [field]: value })
+  await update($, settingsAtom, () => next)
+  const rows = await $.config.list().catch(() => [])
+  const row = rows.find(r => r.key === `calm-mode.${field}`) ?? rows.find(r => r.key.startsWith('calm-mode') && r.key.endsWith(`.${field}`))
+  if (row === undefined) {
+    $.ui.toast('Calm Mode: setting changed for this session only')
+    return
+  }
+  const result = await $.config.set({ key: row.key, value: next[field] } as never).catch(() => ({ deny: 'failed' }))
+  if (result.deny !== undefined) {
+    $.ui.toast('Calm Mode: setting changed for this session only')
+  }
+}
+
+// ── Themes ──────────────────────────────────────────────────────────────────
+
+type Theme = {
+  icons: { done: string; active: string; paused: string; upcoming: string }
+  fill: string
+  empty: string
+  gear: string
+  sep: string
+  headerMark: string
+  labels: { done: string; next: string; later: string; working: string }
+  title: string | undefined
+  accent: string
+  done: string
+  warn: string
+  alert: string
+  shout: (text: string) => string
+  duration: (ms: number) => string
+}
+
+const CLASSIC: Theme = {
+  icons: { done: '✓ ', active: '▶ ', paused: '‖ ', upcoming: '○ ' },
+  fill: '█',
+  empty: '░',
+  gear: '⚙',
+  sep: ' · ',
+  headerMark: '',
+  labels: { done: 'Done', next: 'Next', later: 'Up next', working: 'Working' },
+  title: undefined,
+  accent: 'claude',
+  done: 'success',
+  warn: 'warning',
+  alert: 'warning',
+  shout: text => text,
+  duration: formatDuration,
+}
+
+/** Neon pink titles, cyan meters, yellow alerts. */
+const CYBERPUNK: Theme = {
+  icons: { done: '◆ ', active: '▸ ', paused: '‖ ', upcoming: '◇ ' },
+  fill: '▰',
+  empty: '▱',
+  gear: '⚙',
+  sep: ' // ',
+  headerMark: '◢◤ ',
+  labels: { done: 'DONE', next: 'NEXT', later: 'QUEUED', working: 'WORKING' },
+  title: '#ff2bd6',
+  accent: '#00f0ff',
+  done: '#00f0ff',
+  warn: '#fcee0a',
+  alert: '#ff2bd6',
+  shout: text => text.toUpperCase(),
+  duration: ms => {
+    const seconds = Math.max(0, Math.floor(ms / 1000))
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return seconds >= 3600
+      ? `${Math.floor(seconds / 3600)}:${pad(Math.floor(seconds / 60) % 60)}:${pad(seconds % 60)}`
+      : `${pad(Math.floor(seconds / 60))}:${pad(seconds % 60)}`
+  },
+}
+
+export function registerCalmMode(on: On, options?: unknown): void {
+  const configured = normalizeSettings(options)
+
 
   on('session.start', async ($, e, next) => {
     const stored = await $.store.get(STORE_KEY)
     await update($, enabledAtom, () => (typeof stored === 'boolean' ? stored : true))
+    await update($, settingsAtom, () => configured)
 
     await $.tool.register({
       name: 'plan_steps',
@@ -363,9 +488,11 @@ export function registerCalmMode(on: On): void {
       await update($, checklistAtom, () => newChecklist(jobId, startedAt, cleanName(text.split('\n')[0])))
       await syncFrameTimer($)
       // Name the job in the background; a newer job makes the answer moot.
-      $.clock.after(0, () => {
-        void nameJob($, jobId, text).catch(() => undefined)
-      })
+      if ((await read($, settingsAtom)).jobNaming) {
+        $.clock.after(0, () => {
+          void nameJob($, jobId, text).catch(() => undefined)
+        })
+      }
     }
     return next(e)
   })
@@ -596,9 +723,9 @@ export function registerCalmMode(on: On): void {
     return next(e)
   })
 
-  // Hide the technical rows while Calm Mode is on.
+  // Hide the technical rows while Calm Mode is on and the setting asks for it.
   on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
-    if (!(await read($, enabledAtom))) {
+    if (!(await isHidingToolRows($))) {
       return next(e)
     }
     const { Box } = $.ui.resolve(e)
@@ -606,7 +733,7 @@ export function registerCalmMode(on: On): void {
   })
 
   on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
-    if (!(await read($, enabledAtom))) {
+    if (!(await isHidingToolRows($))) {
       return next(e)
     }
     const { Box } = $.ui.resolve(e)
@@ -614,7 +741,7 @@ export function registerCalmMode(on: On): void {
   })
 
   on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
-    if (!(await read($, enabledAtom))) {
+    if (!(await isHidingToolRows($))) {
       return next(e)
     }
     const { Box } = $.ui.resolve(e)
@@ -622,7 +749,7 @@ export function registerCalmMode(on: On): void {
   })
 
   on('ui.render', { component: 'ToolProgress' }, async ($, e, next) => {
-    if (!(await read($, enabledAtom))) {
+    if (!(await isHidingToolRows($))) {
       return next(e)
     }
     return next({ ...e, props: { ...e.props, hint: '' } })
@@ -633,63 +760,128 @@ export function registerCalmMode(on: On): void {
       return next(e)
     }
 
-    const { Box, Text, Button } = $.ui.resolve(e)
+    const elements = $.ui.resolve(e)
+    const { Box, Text, Button } = elements
+    const Input = 'Input' in elements ? elements.Input : undefined
     const isEnabled = await read($, enabledAtom)
+    const settings = await read($, settingsAtom)
+    const isSettingsOpen = await read($, settingsOpenAtom)
+    const theme = settings.cyberpunk ? CYBERPUNK : CLASSIC
     const list = isEnabled ? await read($, checklistAtom) : null
     const tick = list !== null && (list.phase === 'working' || list.phase === 'needsYou') ? await read($, tickAtom) : 0
     const now = await $.clock.now()
     const columns = Math.max(20, e.props.bodyColumns)
 
-    const label = isEnabled ? '● Calm Mode: ON' : '○ Calm Mode: OFF'
-    const toggle = (
-      <Button
-        key="calm-toggle"
-        label={label}
-        dimColor={!isEnabled}
-        onPress={() => setEnabled($, !isEnabled)}
-      />
+    const label = toggleLabel(settings, isEnabled)
+    const buttons = (
+      <Box flexDirection="row">
+        <Button
+          key="calm-settings"
+          label={theme.gear}
+          plain
+          dimColor={!isSettingsOpen}
+          onPress={() => update($, settingsOpenAtom, isOpen => !isOpen)}
+        />
+        <Text> </Text>
+        <Button
+          key="calm-toggle"
+          label={label}
+          variant={settings.cyberpunk ? 'primary' : undefined}
+          dimColor={!isEnabled}
+          onPress={() => setEnabled($, !isEnabled)}
+        />
+      </Box>
     )
-    const headerRoom = Math.max(4, columns - label.length - 5)
+    const buttonsWidth = theme.gear.length + 1 + label.length + 4
+    const headerRoom = Math.max(4, columns - buttonsWidth - 1)
+
+    const settingsRow = isSettingsOpen ? (
+      <Box key="settings" flexDirection="column">
+        <Box flexDirection="row" flexWrap="wrap">
+          <Button
+            key="set-hide"
+            label={`Hide tool rows: ${settings.hideToolRows ? 'ON' : 'OFF'}`}
+            dimColor={!settings.hideToolRows}
+            onPress={() => setOption($, 'hideToolRows', !settings.hideToolRows)}
+          />
+          <Text> </Text>
+          <Button
+            key="set-naming"
+            label={`Job naming: ${settings.jobNaming ? 'ON' : 'OFF'}`}
+            dimColor={!settings.jobNaming}
+            onPress={() => setOption($, 'jobNaming', !settings.jobNaming)}
+          />
+          <Text> </Text>
+          <Button
+            key="set-cyber"
+            label={`Cyberpunk: ${settings.cyberpunk ? 'ON' : 'OFF'}`}
+            dimColor={!settings.cyberpunk}
+            onPress={() => setOption($, 'cyberpunk', !settings.cyberpunk)}
+          />
+        </Box>
+        {Input === undefined ? null : (
+          <Input
+            key="set-label"
+            label="Button label: "
+            placeholder={DEFAULT_LABEL}
+            value={settings.buttonLabel}
+            submitLabel="save"
+            onSubmit={value => setOption($, 'buttonLabel', value)}
+          />
+        )}
+      </Box>
+    ) : null
 
     if (list === null) {
       return (
-        <Box flexDirection="row" justifyContent="flex-end" width={columns}>
-          {toggle}
+        <Box flexDirection="column" width={columns}>
+          <Box flexDirection="row" justifyContent="flex-end" width={columns}>
+            {buttons}
+          </Box>
+          {settingsRow}
         </Box>
       )
     }
 
-    const elapsed = formatDuration((list.finishedAt ?? now) - list.startedAt)
+    const elapsed = theme.duration((list.finishedAt ?? now) - list.startedAt)
+    const title = theme.shout(list.title)
+    const sep = theme.sep
     const header = (() => {
       switch (list.phase) {
         case 'needsYou':
           return (
             <Text wrap="truncate">
-              <Text inverse bold color="warning">
-                {' Needs you '}
+              <Text inverse bold color={theme.warn}>
+                {` ${theme.shout('Needs you')} `}
               </Text>
-              <Text>{` ${list.needsYouReason ?? 'Claude needs your OK to continue'}`}</Text>
+              <Text color={theme.warn}>{` ${list.needsYouReason ?? 'Claude needs your OK to continue'}`}</Text>
             </Text>
           )
         case 'stuck':
           return (
-            <Text wrap="truncate" color="warning">
-              {`⚠ Stuck: ${list.stuckReason ?? 'something went wrong'}`}
+            <Text wrap="truncate" color={theme.alert}>
+              {`⚠ ${theme.shout('Stuck')}: ${list.stuckReason ?? 'something went wrong'}`}
             </Text>
           )
         case 'stopped':
-          return <Text wrap="truncate">{`■ Stopped · ${list.title} · you pressed Esc`}</Text>
+          return (
+            <Text wrap="truncate" color={theme.title}>
+              {`■ ${theme.shout('Stopped')}${sep}${title}${sep}you pressed Esc`}
+            </Text>
+          )
         case 'done':
           return (
-            <Text wrap="truncate" color="success">
-              {`✓ All done · ${list.title} · took ${elapsed}`}
+            <Text wrap="truncate" color={theme.done}>
+              {`${theme.icons.done}${theme.shout('All done')}${sep}${title}${sep}took ${elapsed}`}
             </Text>
           )
         default:
           return (
             <Text wrap="truncate">
-              <Text bold>{list.title}</Text>
-              <Text dimColor>{` · ${elapsed}`}</Text>
+              <Text bold color={theme.title}>{`${theme.headerMark}${title}`}</Text>
+              <Text dimColor={!settings.cyberpunk} color={settings.cyberpunk ? theme.accent : undefined}>
+                {`${sep}${elapsed}`}
+              </Text>
             </Text>
           )
       }
@@ -698,16 +890,21 @@ export function registerCalmMode(on: On): void {
     const headerRow = (
       <Box flexDirection="row" justifyContent="space-between" width={columns}>
         <Box width={headerRoom}>{header}</Box>
-        {toggle}
+        {buttons}
       </Box>
     )
 
     if (list.isCollapsed) {
-      return headerRow
+      return (
+        <Box flexDirection="column" width={columns}>
+          {headerRow}
+          {settingsRow}
+        </Box>
+      )
     }
 
-    // icon(2) + name + gap(1) + meter(10) + gap(2) + label(7)
-    const nameWidth = Math.max(6, Math.min(NAME_LIMIT, columns - 2 - 1 - METER_CELLS - 2 - 7))
+    // icon(2) + name + gap(1) + meter(10) + label(9)
+    const nameWidth = Math.max(6, Math.min(NAME_LIMIT, columns - 2 - 1 - METER_CELLS - 9))
     const fit = (name: string) =>
       name.length > nameWidth ? `${name.slice(0, nameWidth - 1)}…` : name.padEnd(nameWidth)
 
@@ -717,35 +914,37 @@ export function registerCalmMode(on: On): void {
       if (task.status === 'done') {
         return (
           <Box key={`row-${task.id}`} flexDirection="row">
-            <Text color="success">{'✓ '}</Text>
+            <Text color={theme.done}>{theme.icons.done}</Text>
             <Text dimColor>{`${fit(task.name)} `}</Text>
-            <Text color="success">{'█'.repeat(METER_CELLS)}</Text>
-            <Text dimColor>{'  Done'}</Text>
+            <Text color={theme.done}>{theme.fill.repeat(METER_CELLS)}</Text>
+            <Text dimColor>{`  ${theme.labels.done}`}</Text>
           </Box>
         )
       }
       if (task.status === 'active') {
         const isPaused = list.phase === 'needsYou'
         const meter = task.hasReported
-          ? '█'.repeat(Math.round(task.percent / 10)).padEnd(METER_CELLS, '░')
+          ? theme.fill.repeat(Math.round(task.percent / 10)).padEnd(METER_CELLS, theme.empty)
           : Array.from({ length: METER_CELLS }, (_, cell) =>
-              (cell - (tick % METER_CELLS) + METER_CELLS) % METER_CELLS < 3 ? '█' : '░',
+              (cell - (tick % METER_CELLS) + METER_CELLS) % METER_CELLS < 3 ? theme.fill : theme.empty,
             ).join('')
         return (
           <Box key={`row-${task.id}`} flexDirection="row">
-            <Text color="claude">{isPaused ? '‖ ' : '▶ '}</Text>
-            <Text bold>{`${fit(task.name)} `}</Text>
-            <Text color="claude">{meter}</Text>
-            <Text>{task.hasReported ? `  ${task.percent}%` : '  Working'}</Text>
+            <Text color={theme.accent}>{isPaused ? theme.icons.paused : theme.icons.active}</Text>
+            <Text bold color={settings.cyberpunk ? theme.title : undefined}>{`${fit(task.name)} `}</Text>
+            <Text color={theme.accent}>{meter}</Text>
+            <Text color={settings.cyberpunk ? theme.accent : undefined}>
+              {task.hasReported ? `  ${task.percent}%` : `  ${theme.labels.working}`}
+            </Text>
           </Box>
         )
       }
       return (
         <Box key={`row-${task.id}`} flexDirection="row">
-          <Text dimColor>{'○ '}</Text>
+          <Text dimColor>{theme.icons.upcoming}</Text>
           <Text dimColor>{`${fit(task.name)} `}</Text>
-          <Text dimColor>{'░'.repeat(METER_CELLS)}</Text>
-          <Text dimColor>{i === firstUpcoming ? '  Next' : '  Up next'}</Text>
+          <Text dimColor>{theme.empty.repeat(METER_CELLS)}</Text>
+          <Text dimColor>{`  ${i === firstUpcoming ? theme.labels.next : theme.labels.later}`}</Text>
         </Box>
       )
     })
@@ -754,6 +953,7 @@ export function registerCalmMode(on: On): void {
       <Box flexDirection="column" width={columns}>
         {headerRow}
         {rows}
+        {settingsRow}
       </Box>
     )
   })

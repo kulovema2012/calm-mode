@@ -1,7 +1,33 @@
 {
   "name": "calm-mode",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Calm Mode: hides tool calls and shows one friendly checklist above the prompt while Claude works.",
   "author": { "name": "Newk" },
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "hideToolRows": {
+      "type": "boolean",
+      "title": "Hide tool rows",
+      "description": "While Calm Mode is on, hide tool calls, their output and progress hints. Off keeps the checklist but shows every row.",
+      "default": true
+    },
+    "jobNaming": {
+      "type": "boolean",
+      "title": "Job naming",
+      "description": "Ask Haiku for a short 2 to 6 word name for each new request. Off saves that small call and uses your first line instead.",
+      "default": true
+    },
+    "buttonLabel": {
+      "type": "string",
+      "title": "Button label",
+      "description": "The words on the on/off button, up to 20 characters.",
+      "default": "Calm Mode"
+    },
+    "cyberpunk": {
+      "type": "boolean",
+      "title": "Cyberpunk theme",
+      "description": "Neon pink titles, cyan meters and yellow alerts.",
+      "default": false
+    }
+  }
 }
