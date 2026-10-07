@@ -51,7 +51,7 @@ Button label: Calm Mode
 | Track | Neon Drive | `[ ♪ Track: … ]` steps through the built-in tracks, then **Shuffle** (a random track each job). |
 | Music file | (empty) | Full path to your own MP3 or WAV. When set, it plays instead of the built-in track. |
 | Away recap | ON | After a job ends, if you stay quiet for **Away after** minutes (default 5, set in `/config`), the band shows a **Welcome back** card. |
-| Cache meter | ON | Shows how much of the last turn came from the prompt cache, at the right of the band beside ⚙. |
+| Cache in status line | OFF | Adds `⚡ cache 87%` at the right end of your status line. The button (or `/calm statusline on\|off`) edits your status line for you. |
 
 ### Built-in tracks
 
@@ -76,9 +76,21 @@ Last you asked: "make the pricing cards blue"
 
 "Claude said" is a one or two sentence summary written by Haiku (one small call, only when the card appears). Press **Got it** or just type your next message to clear it.
 
-### Cache meter
+### Cache meter in the status line
 
-`⚡ cache 87%` (at the right of the band, beside ⚙) means 87% of the last turn's prompt was read from the prompt cache, which is cheaper and faster. `⚡ cache warming up` means the cache was just written and the next turn should hit it.
+```
+🤖 Opus 5.5 | 📁 ~/my-app | ⎇ main | 📊 ctx: 42% | ⚡ cache 87%
+```
+
+The meter sits at the right end of Claude Code's status line and shows how much of the newest request's prompt was read from the prompt cache, which is cheaper and faster: green at 70% and up, yellow from 30%, red below. `⚡ cache warming up` means the cache was just written and the next request should hit it.
+
+A plugin cannot set the status line itself, so turning it on runs `statusline/install.mjs`, which:
+
+- copies the meter to `~/.claude/hooks/calm-cache-statusline.mjs` (outside the plugin, so updates never break your status line),
+- saves your current status-line command in `~/.claude/hooks/calm-cache-statusline.json` and runs it first, so everything you had stays,
+- backs up `settings.json` to `settings.json.calm-backup` before every change.
+
+Turning it off puts your previous status line back. It follows the same wrapper convention as other status-line wrappers: if another wrapper was later installed around it, removing the meter hands that wrapper your original command, so the chain never breaks.
 
 The same settings appear in `/config` under Calm Mode, and the two always agree.
 

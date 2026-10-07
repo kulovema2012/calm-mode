@@ -49,7 +49,7 @@ export type CalmSettings = {
   awayRecap: boolean
   /** Minutes of quiet after a job before the recap shows (1 to 120). */
   awayMinutes: number
-  /** Show the last turn's prompt-cache hit rate in the status line. */
+  /** The cache meter is installed at the right end of the status line. */
   cacheMeter: boolean
 }
 
@@ -79,8 +79,6 @@ declare module 'claude-code' {
       settings: CalmSettings
       isSettingsOpen: boolean
       recap: AwayRecap | null
-      /** The last turn's cache meter text, e.g. "⚡ cache 87%". */
-      cacheLine: string | null
     }
   }
 }

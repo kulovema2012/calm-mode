@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { cacheLine, clampVolume, cleanName, fallbackSummary, musicCommand, nextTrack, trackName, windowsMusicScript } from './calm-mode'
+import { clampVolume, cleanName, fallbackSummary, musicCommand, nextTrack, trackName, windowsMusicScript } from './calm-mode'
 
 /** argv of every player the plugin started in the current test. */
 let spawned: string[][] = []
@@ -349,26 +349,34 @@ test('the track button shows and steps the track', async ($, on) => {
 
 const FINISHED = { answer: 'Added the pricing section. The footer needs your logo.', durationMs: 1000, isAborted: false, turnId: 't1', reason: 'answer' } as const
 
-test('cache line: share of prompt tokens read from cache', () => {
-  expect(cacheLine({ input_tokens: 100, cache_read_input_tokens: 870, cache_creation_input_tokens: 30 })).toBe('⚡ cache 87%')
-  expect(cacheLine({ input_tokens: 50, cache_read_input_tokens: 0, cache_creation_input_tokens: 9000 })).toBe('⚡ cache warming up')
-  expect(cacheLine({ input_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 })).toBeUndefined()
-})
-
-test('the band shows the cache hit at the right after a turn, and no status line', async ($, on) => {
-  await start($, on)
-  await $.turn.complete({ ...FINISHED, usage: { model: 'm', input_tokens: 100, output_tokens: 5, cache_read_input_tokens: 900, cache_creation_input_tokens: 0 } } as never)
-  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await ui.find({ type: 'Text', text: '⚡ cache 90%  ' })).toBeDefined()
-  await ui.unmount()
-  expect(JSON.stringify(statuses)).not.toContain('cache')
-})
-
-test('no cache line with the meter off', { options: { cacheMeter: false } }, async ($, on) => {
+test('the cache meter is never drawn in the band', async ($, on) => {
   await start($, on)
   await $.turn.complete({ ...FINISHED, usage: { model: 'm', input_tokens: 100, output_tokens: 5, cache_read_input_tokens: 900, cache_creation_input_tokens: 0 } } as never)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await ui.find({ type: 'Text', text: /cache/ })).toBeUndefined()
+  await ui.unmount()
+  expect(JSON.stringify(statuses)).not.toContain('cache')
+})
+
+test('the status-line button runs the installer and records the choice', async ($, on) => {
+  const runs: string[][] = []
+  on('process.run', (_$, e) => {
+    runs.push([...(e as unknown as { argv: string[] }).argv])
+    return { value: { exitCode: 0, stdout: 'Added the cache meter to the right end of your status line.\n', stderr: '' } } as never
+  })
+  await start($, on)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await ui.press({ key: 'calm-settings' })
+  expect((await ui.find({ key: 'set-cache' }))?.props.label).toBe('Cache in status line: OFF')
+  await ui.press({ key: 'set-cache' })
+  // On load the plugin only asks for the status; the press is the one change.
+  expect(runs.filter(argv => argv[2] === 'status').length).toBe(1)
+  const changes = runs.filter(argv => argv[2] !== 'status')
+  expect(changes.length).toBe(1)
+  expect(changes[0]?.[0]).toBe('node')
+  expect(String(changes[0]?.[1])).toMatch(/statusline[\\/]install\.mjs$/)
+  expect(changes[0]?.[2]).toBe('install')
+  expect((await ui.find({ key: 'set-cache' }))?.props.label).toBe('Cache in status line: ON')
   await ui.unmount()
 })
 

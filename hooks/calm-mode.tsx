@@ -329,7 +329,7 @@ export const DEFAULT_SETTINGS: CalmSettings = {
   track: 'neon-drive',
   awayRecap: true,
   awayMinutes: 5,
-  cacheMeter: true,
+  cacheMeter: false,
 }
 
 export const settingsAtom = atom({ plugin: 'calm-mode', key: 'settings' } as const, DEFAULT_SETTINGS)
@@ -530,7 +530,6 @@ async function syncMusic($: Engine) {
 // sentence summary, and what they last asked. Typing or "Got it" clears it.
 
 export const recapAtom = atom({ plugin: 'calm-mode', key: 'recap' } as const, null)
-export const cacheAtom = atom({ plugin: 'calm-mode', key: 'cacheLine' } as const, null)
 
 /** The person's prompt, first line only, at most 70 characters. */
 export function shortQuote(text: string): string {
@@ -612,26 +611,38 @@ async function dismissRecap($: Engine) {
   }
 }
 
-// ── Cache meter ─────────────────────────────────────────────────────────────
+// ── Cache meter (status line) ───────────────────────────────────────────────
+// The meter lives in Claude Code's status line, at its right end, drawn by
+// statusline/cache-statusline.mjs. statusline/install.mjs wraps whatever status
+// line the person has; this button and /calm statusline only run it, because a
+// plugin cannot set the status line itself.
 
-/**
- * The band's cache meter for one turn: the share of prompt tokens the prompt
- * cache served. Undefined when the turn read no prompt at all.
- */
-export function cacheLine(usage: {
-  input_tokens: number
-  cache_read_input_tokens: number
-  cache_creation_input_tokens: number
-}): string | undefined {
-  const read = usage.cache_read_input_tokens
-  const total = usage.input_tokens + read + usage.cache_creation_input_tokens
-  if (total <= 0) {
-    return undefined
+function installerPath($: Engine): string {
+  const sep = /^[A-Za-z]:[\\/]/.test($.plugin.root) ? '\\' : '/'
+  return [$.plugin.root, 'statusline', 'install.mjs'].join(sep)
+}
+
+/** Whether the status line currently runs the cache meter; undefined when that cannot be told. */
+async function isCacheMeterInstalled($: Engine): Promise<boolean | undefined> {
+  const ran = await $.process
+    .run(['node', installerPath($), 'status'], { timeoutMs: 10000 })
+    .catch(() => undefined)
+  return ran === undefined || ran.exitCode !== 0 ? undefined : ran.stdout.trim() === 'installed'
+}
+
+/** Runs the status-line installer and records the choice; says what happened. */
+async function setCacheMeter($: Engine, isOn: boolean) {
+  const ran = await $.process
+    .run(['node', installerPath($), isOn ? 'install' : 'uninstall'], { timeoutMs: 20000 })
+    .catch(() => undefined)
+  if (ran === undefined || ran.exitCode !== 0) {
+    $.ui.toast('Calm Mode: could not change the status line (is Node.js installed?)')
+    return 'Could not change the status line.'
   }
-  if (read === 0 && usage.cache_creation_input_tokens > 0) {
-    return '⚡ cache warming up'
-  }
-  return `⚡ cache ${Math.round((read / total) * 100)}%`
+  await setOption($, 'cacheMeter', isOn)
+  const said = ran.stdout.trim()
+  $.ui.toast(said === '' ? 'Calm Mode: status line updated' : said)
+  return said
 }
 
 // ── Themes ──────────────────────────────────────────────────────────────────
@@ -702,8 +713,14 @@ export function registerCalmMode(on: On, options?: unknown): void {
     const stored = await $.store.get(STORE_KEY)
     await update($, enabledAtom, () => (typeof stored === 'boolean' ? stored : true))
     await update($, settingsAtom, () => configured)
-    // Versions before 0.5.1 pinned the meter in the status line; take it down.
+    // Versions before 0.5.1 pinned the meter in the plugin's own status row; take it down.
     $.ui.status(undefined)
+    // The button shows what the status line really holds; reading it changes nothing.
+    void isCacheMeterInstalled($).then(isInstalled => {
+      if (isInstalled !== undefined && isInstalled !== configured.cacheMeter) {
+        void update($, settingsAtom, current => ({ ...current, cacheMeter: isInstalled }))
+      }
+    })
 
     await $.tool.register({
       name: 'plan_steps',
@@ -732,8 +749,8 @@ export function registerCalmMode(on: On, options?: unknown): void {
     })
     await $.command.register({
       name: 'calm',
-      description: 'Turn Calm Mode on or off (no argument flips it)',
-      argumentHint: '[on|off]',
+      description: 'Turn Calm Mode on or off (no argument flips it); statusline on|off adds the cache meter',
+      argumentHint: '[on|off] | statusline on|off',
       immediate: true,
     })
 
@@ -742,6 +759,10 @@ export function registerCalmMode(on: On, options?: unknown): void {
 
   on('command.run', { command: 'calm' }, async ($, e) => {
     const arg = e.args.trim().toLowerCase()
+    const statusLine = /^statusline\s+(on|off)$/.exec(arg)
+    if (statusLine !== null) {
+      return { text: await setCacheMeter($, statusLine[1] === 'on') }
+    }
     const isEnabled = arg === 'on' ? true : arg === 'off' ? false : !(await read($, enabledAtom))
     await setEnabled($, isEnabled)
     return { text: isEnabled ? 'Calm Mode is on.' : 'Calm Mode is off.' }
@@ -975,10 +996,6 @@ export function registerCalmMode(on: On, options?: unknown): void {
     runtime.isTurnRunning = false
     runtime.lastAnswer = e.answer
     const settings = await read($, settingsAtom)
-    const line = e.usage === undefined ? undefined : cacheLine(e.usage)
-    if (line !== undefined) {
-      await update($, cacheAtom, () => line)
-    }
     runtime.awayTimer?.cancel()
     runtime.awayTimer = settings.awayRecap
       ? $.clock.after(settings.awayMinutes * 60_000, () => {
@@ -1080,8 +1097,6 @@ export function registerCalmMode(on: On, options?: unknown): void {
     const settings = await read($, settingsAtom)
     const isSettingsOpen = await read($, settingsOpenAtom)
     const recap = isEnabled ? await read($, recapAtom) : null
-    const cache = settings.cacheMeter ? await read($, cacheAtom) : null
-    const cacheText = cache === null ? '' : `${cache}  `
     const theme = settings.cyberpunk ? CYBERPUNK : CLASSIC
     const list = isEnabled ? await read($, checklistAtom) : null
     const tick = list !== null && (list.phase === 'working' || list.phase === 'needsYou') ? await read($, tickAtom) : 0
@@ -1091,11 +1106,6 @@ export function registerCalmMode(on: On, options?: unknown): void {
     const label = toggleLabel(settings, isEnabled)
     const buttons = (
       <Box flexDirection="row">
-        {cacheText === '' ? null : (
-          <Text dimColor={!settings.cyberpunk} color={settings.cyberpunk ? theme.accent : undefined}>
-            {cacheText}
-          </Text>
-        )}
         <Button
           key="calm-settings"
           label={theme.gear}
@@ -1113,7 +1123,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
         />
       </Box>
     )
-    const buttonsWidth = cacheText.length + theme.gear.length + 1 + label.length + 4
+    const buttonsWidth = theme.gear.length + 1 + label.length + 4
     const headerRoom = Math.max(4, columns - buttonsWidth - 1)
 
     const settingsRow = isSettingsOpen ? (
@@ -1175,9 +1185,9 @@ export function registerCalmMode(on: On, options?: unknown): void {
           <Text> </Text>
           <Button
             key="set-cache"
-            label={`Cache meter: ${settings.cacheMeter ? 'ON' : 'OFF'}`}
+            label={`Cache in status line: ${settings.cacheMeter ? 'ON' : 'OFF'}`}
             dimColor={!settings.cacheMeter}
-            onPress={() => setOption($, 'cacheMeter', !settings.cacheMeter)}
+            onPress={() => setCacheMeter($, !settings.cacheMeter)}
           />
         </Box>
         {Input === undefined ? null : (
