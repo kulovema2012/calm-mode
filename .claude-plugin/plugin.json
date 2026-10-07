@@ -1,6 +1,6 @@
 {
   "name": "calm-mode",
-  "version": "0.9.5",
+  "version": "0.10.0",
   "description": "Calm Mode: hides tool calls and shows one friendly checklist above the prompt while Claude works.",
   "author": { "name": "Newk" },
   "types": "./types/index.d.ts",
@@ -65,6 +65,13 @@
       "title": "Away after (minutes)",
       "description": "Minutes of quiet after a job before the Welcome back card appears (1 to 120).",
       "default": 5
+    },
+    "recapStyle": {
+      "type": "string",
+      "title": "Recap style",
+      "description": "Where the Welcome back recap reads: band (above the prompt, fitted to its rows) or pane (a larger panel of its own, with the job's steps).",
+      "default": "band",
+      "options": ["band", "pane"]
     },
     "cacheMeter": {
       "type": "boolean",

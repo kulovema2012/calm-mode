@@ -51,6 +51,8 @@ export type CalmSettings = {
   awayMinutes: number
   /** The cache meter is installed at the right end of the status line. */
   cacheMeter: boolean
+  /** Where the Welcome back recap reads: in the band above the prompt, or in a pane of its own. */
+  recapStyle: 'band' | 'pane'
 }
 
 /** What the "Welcome back" card shows about the last job. */

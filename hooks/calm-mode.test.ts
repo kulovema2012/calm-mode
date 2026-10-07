@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { clampVolume, cleanName, mayPlay, stepAwayMinutes, fallbackPoints, parsePoints, wrapText, musicCommand, nextTrack, trackName, windowsMusicScript } from './calm-mode'
+import { clampVolume, cleanName, fitChecklist, fitRecap, mayPlay, recapLines, stepAwayMinutes, fallbackPoints, parsePoints, wrapText, musicCommand, nextTrack, trackName, windowsMusicScript } from './calm-mode'
 
 /** argv of every player the plugin started in the current test. */
 let spawned: string[][] = []
@@ -72,7 +72,7 @@ test('names are cleaned into plain words', () => {
   const long = cleanName(
     'Rewrite the whole onboarding flow so that new customers understand every single option they see',
   )
-  expect(long.length <= 40).toBe(true)
+  expect(long.length <= 60).toBe(true)
   expect(long.endsWith('…')).toBe(true)
   expect(cleanName('`npm run build`')).toBe('Working on it')
 })
@@ -608,4 +608,88 @@ test('the away buttons change how long before the card shows', async ($, on) => 
   await ui.redraw()
   expect(await ui.find({ type: 'Text', text: /Welcome back/ })).toBeDefined()
   await ui.unmount()
+})
+
+// ── Bigger plan, fitted band, recap pane (v0.10.0) ─────────────────────────
+
+const task = (i: number, status: 'done' | 'active' | 'upcoming') => ({
+  id: `t${i}`,
+  name: `Step ${i}`,
+  status,
+  percent: status === 'done' ? 100 : 0,
+  hasReported: status === 'done',
+})
+
+test('a plan takes up to 12 steps', async ($, on) => {
+  await start($, on)
+  const steps = Array.from({ length: 14 }, (_, i) => `Do part ${i + 1}`)
+  const planned = await $.tool.call({ tool: PLAN_TOOL, steps } as never)
+  expect(String(planned.result)).toBe('Planned 12 steps. The first one has started.')
+})
+
+test('checklist folds finished steps, then later ones, to fit the rows', () => {
+  const tasks = [task(1, 'done'), task(2, 'done'), task(3, 'done'), task(4, 'active'), task(5, 'upcoming'), task(6, 'upcoming')]
+  expect(fitChecklist(tasks, 6)).toEqual({ foldedDone: 0, shown: tasks, foldedAfter: 0 })
+  const four = fitChecklist(tasks, 4)
+  expect(four.foldedDone).toBe(3)
+  expect(four.shown.map(t => t.id)).toEqual(['t4', 't5', 't6'])
+  const three = fitChecklist(tasks, 3)
+  expect(three.foldedDone).toBe(3)
+  expect(three.shown.map(t => t.id)).toEqual(['t4'])
+  expect(three.foldedAfter).toBe(2)
+})
+
+test('the band never scrolls: a short band shows the folded checklist', async ($, on) => {
+  await start($, on)
+  const steps = Array.from({ length: 10 }, (_, i) => `Do part ${i + 1}`)
+  await $.tool.call({ tool: PLAN_TOOL, steps } as never)
+  await $.tool.call({ tool: PROGRESS_TOOL, task: 'Do part 6', percent: 40 } as never)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, maxRows: 5 } })
+  expect(await ui.find({ type: 'Text', text: /5 steps done/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /more steps/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('recap fitting drops rules, then the question, then extra points', () => {
+  const recap = {
+    jobId: 1, title: 'Build the page', phase: 'done', tookMs: 60_000, stepsDone: 2, stepsTotal: 2,
+    points: ['First point', 'Second point', 'Third point'], lastAsked: 'make it blue',
+    awaySince: 0, isShowing: true, isResumed: false, isCacheCold: false,
+  } as const
+  const theme = { icons: { done: '✓ ', active: '▶ ', paused: '‖ ', upcoming: '○ ' }, sep: ' · ', shout: (t: string) => t, duration: () => '1m 0s', accent: 'claude', done: 'success', warn: 'warning', title: undefined } as never
+  const all = recapLines({ ...recap, points: [...recap.points] }, theme, false, 60)
+  expect(all.map(l => l.kind)).toEqual(['divider', 'status', 'divider', 'heading', 'point', 'point', 'point', 'divider', 'askedHeading', 'asked'])
+  expect(fitRecap(all, 7).map(l => l.kind)).toEqual(['status', 'heading', 'point', 'point', 'point', 'askedHeading', 'asked'])
+  expect(fitRecap(all, 5).map(l => l.kind)).toEqual(['status', 'heading', 'point', 'point', 'point'])
+  expect(fitRecap(all, 3).map(l => l.kind)).toEqual(['status', 'heading', 'point'])
+})
+
+test('pane style: the band keeps one line with Open recap', { options: { recapStyle: 'pane' } }, async ($, on) => {
+  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
+  on('session.messages', () => ({ value: [{ role: 'assistant', text: 'Done.', toolUses: [] }] }) as never)
+  await start($, on)
+  await $.command.run({ command: 'calm', args: 'recap' } as never)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ key: 'recap-open' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /What Claude did/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('the recap pane shows the full card with the job steps', async ($, on) => {
+  on('session.messages', () => ({ value: [{ role: 'assistant', text: 'Done.', toolUses: [] }] }) as never)
+  await start($, on)
+  await $.tool.call({ tool: PLAN_TOOL, steps: ['Read your notes', 'Build the page'] } as never)
+  await $.command.run({ command: 'calm', args: 'recap' } as never)
+  const pane = await $.ui.mount({
+    plugin: 'calm-mode',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'calm-recap',
+    props: { title: 'Welcome back', isFocused: false, bodyColumns: 50, placement: 'dock', scroll: { offset: 0, bodyRows: 30 } },
+  } as never)
+  expect(await pane.find({ type: 'Text', text: /Welcome back/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /^Steps$/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /Read your notes/ })).toBeDefined()
+  expect(await pane.find({ key: 'recap-pane-ok' })).toBeDefined()
+  await pane.unmount()
 })

@@ -52,11 +52,16 @@ Button label: Calm Mode
 | Music file | (empty) | Full path to your own MP3 or WAV. When set, it plays instead of the built-in track. |
 | Away recap | ON | After a job ends, if you stay quiet for a while, the band shows a **Welcome back** card. |
 | Away after | 5m | How long that while is. `[ − ]` and `[ + ]` step through 1, 2, 3, 5, 10, 15, 20, 30, 45, 60, 90 and 120 minutes; `/config` takes any value from 1 to 120. |
+| Recap | Band | Where the Welcome back recap reads. **Band**: above the prompt, full width, trimmed to fit. **Pane**: a larger panel of its own that also lists the job's steps; the band keeps one line with `[ Open recap ]`. |
 | Cache in status line | OFF | Adds `⚡ cache 87% ▰▰▰▰▰▰▰▰▱▱ 47m` at the right end of your status line. The button (or `/calm statusline on\|off`) edits your status line for you. |
 
 ### Several Claude sessions at once
 
 Only one track plays at a time, whichever sessions are busy. The first busy session takes the player by writing a small lock file, `~/.claude/calm-mode-music.json`, and renews it every 3 seconds; other busy sessions stay quiet. When that session's job ends it hands the player back, and another busy session picks it up within 3 seconds, playing its own track and volume. If a session closes without handing back, the others take over after 9 seconds.
+
+### Fitting the screen
+
+Claude Code gives the band at most half the terminal's height. Calm Mode never makes it scroll: a long plan folds its finished steps into one `✓ 5 steps done` row, and then the steps after the current one into `○ …3 more steps`; a long recap drops its rules, then the question you asked, then all but its first point. Plans hold up to 12 steps, with step names up to 60 characters.
 
 ### Built-in tracks
 
@@ -86,7 +91,7 @@ You last asked
                                                       [ Got it ]
 ```
 
-"What Claude did" is up to three short points written by Haiku (one small call, only when the card appears); anything waiting on you is highlighted with ➜. Thin rules (dashed neon in the Cyberpunk theme) split the card's sections, and its text wraps neatly at about 76 characters however wide your terminal is. The ⚙ and on/off buttons on the first row belong to the band, which shows them on every screen. Press **Got it** or just type your next message to clear it. Type `/calm recap` to show it any time.
+"What Claude did" is up to three short points written by Haiku (one small call, only when the card appears); anything waiting on you is highlighted with ➜. Thin rules (dashed neon in the Cyberpunk theme) split the card's sections, and its text uses the band's full width. The ⚙ and on/off buttons on the first row belong to the band, which shows them on every screen. Press **Got it** or just type your next message to clear it. Type `/calm recap` to show it any time.
 
 **After `claude --resume`** the card appears straight away, rebuilt from the saved conversation: how long you were away, your last request, the points of Claude's last reply, and a warning when the prompt cache has expired (your next message then re-reads the whole conversation at full price).
 
@@ -120,7 +125,7 @@ The same settings appear in `/config` under Calm Mode, and the two always agree.
 
 ## Good to know
 
-- While Calm Mode is on, Claude has to lay out a plan (2 to 8 plain-English steps) before it uses any other tool. This adds a few extra tokens to each request.
+- While Calm Mode is on, Claude has to lay out a plan (2 to 12 plain-English steps) before it uses any other tool. This adds a few extra tokens to each request.
 - Each new request makes one small Haiku call to give the job a short name.
 - Subagents are never blocked.
 

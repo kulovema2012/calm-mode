@@ -8,7 +8,8 @@ type Engine = EngineInterface
 const PLAN_TOOL = 'mcp__calm-mode__plan_steps'
 const PROGRESS_TOOL = 'mcp__calm-mode__report_progress'
 const STORE_KEY = 'calmModeEnabled'
-const NAME_LIMIT = 40
+const NAME_LIMIT = 60
+const MAX_STEPS = 12
 const METER_CELLS = 10
 const COLLAPSE_AFTER_MS = 5000
 const FRAME_MS = 250
@@ -37,7 +38,7 @@ export const tickAtom = atom({ plugin: 'calm-mode', key: 'tick' } as const, 0)
 
 /**
  * Turns any step or job name into plain words: no code, paths or file names,
- * one space between words, a capital first letter and at most 40 characters.
+ * one space between words, a capital first letter and at most 60 characters.
  */
 export function cleanName(raw: unknown): string {
   let text = typeof raw === 'string' ? raw : ''
@@ -334,6 +335,7 @@ export const DEFAULT_SETTINGS: CalmSettings = {
   awayRecap: true,
   awayMinutes: 5,
   cacheMeter: false,
+  recapStyle: 'band',
 }
 
 export const settingsAtom = atom({ plugin: 'calm-mode', key: 'settings' } as const, DEFAULT_SETTINGS)
@@ -358,6 +360,7 @@ export function normalizeSettings(options: unknown): CalmSettings {
         ? Math.round(Math.min(120, Math.max(1, raw.awayMinutes)))
         : DEFAULT_SETTINGS.awayMinutes,
     cacheMeter: flag('cacheMeter', DEFAULT_SETTINGS.cacheMeter),
+    recapStyle: raw.recapStyle === 'pane' ? 'pane' : 'band',
     track: TRACK_CHOICES.includes(raw.track as TrackChoice) ? (raw.track as TrackChoice) : 'neon-drive',
     musicFile: typeof raw.musicFile === 'string' ? raw.musicFile.trim().replace(/^["']+|["']+$/g, '') : '',
   }
@@ -702,6 +705,10 @@ async function summarize($: Engine, answer: string): Promise<string[] | undefine
 /** Shows the card, keeps "away 18m" current, then swaps in Haiku's points when they arrive. */
 async function presentRecap($: Engine, recap: AwayRecap, answer: string) {
   await update($, recapAtom, () => recap)
+  if ((await read($, settingsAtom)).recapStyle === 'pane') {
+    // Unasked, Claude Code seats a pane only on a wide terminal; the band's "Open recap" seats it anywhere.
+    void $.ui.open({ id: RECAP_PANE, title: 'Welcome back' }).catch(() => undefined)
+  }
   // One redraw a minute, never an animation.
   runtime.recapTicker?.cancel()
   runtime.recapTicker = $.clock.every(60_000, () => {
@@ -841,6 +848,7 @@ export function wrapText(text: string, width: number): string[] {
 }
 
 async function dismissRecap($: Engine) {
+  void $.ui.close({ id: RECAP_PANE }).catch(() => undefined)
   runtime.awayTimer?.cancel()
   runtime.awayTimer = null
   runtime.recapTicker?.cancel()
@@ -944,6 +952,126 @@ const CYBERPUNK: Theme = {
   },
 }
 
+// ── Recap layout ────────────────────────────────────────────────────────────
+// The recap is described as plain lines first, so the band and the pane draw the same thing and the band can
+// drop the least important lines when Claude Code gives it too few rows.
+
+export const RECAP_PANE = 'calm-recap'
+
+export type LineKind = 'divider' | 'status' | 'heading' | 'point' | 'askedHeading' | 'asked' | 'stepsHeading' | 'step'
+
+export type RecapLine = { kind: LineKind; text: string; color?: string; isBold?: boolean; isDim?: boolean }
+
+/** Every line of the recap at `width` columns; `steps` adds the job's steps (the pane has room for them). */
+export function recapLines(
+  recap: AwayRecap,
+  theme: Theme,
+  isCyberpunk: boolean,
+  width: number,
+  steps: readonly ChecklistTask[] = [],
+): RecapLine[] {
+  const textWidth = Math.max(16, width - 4)
+  const rule: RecapLine = {
+    kind: 'divider',
+    text: (isCyberpunk ? '┄' : '─').repeat(width),
+    color: isCyberpunk ? theme.title : undefined,
+    isDim: true,
+  }
+  const heading = (kind: LineKind, text: string): RecapLine => ({
+    kind,
+    text: theme.shout(text),
+    isBold: true,
+    isDim: !isCyberpunk,
+    color: isCyberpunk ? theme.accent : undefined,
+  })
+  const icon = recap.phase === 'done' ? theme.icons.done : recap.phase === 'needsYou' ? theme.icons.paused : '■ '
+  const outcome =
+    recap.phase === 'done'
+      ? `took ${theme.duration(recap.tookMs)}`
+      : recap.phase === 'needsYou'
+        ? 'waiting for your reply'
+        : recap.phase === 'stuck'
+          ? 'stuck'
+          : 'stopped'
+  const status: RecapLine = recap.isResumed
+    ? {
+        kind: 'status',
+        text: `↻ Resumed session${recap.isCacheCold ? `${theme.sep}cache expired, your next message re-reads everything` : ''}`,
+        color: recap.isCacheCold ? theme.warn : theme.accent,
+      }
+    : {
+        kind: 'status',
+        text: `${icon}${recap.title}${theme.sep}${outcome}${recap.stepsTotal > 0 ? `${theme.sep}${recap.stepsDone}/${recap.stepsTotal} steps` : ''}`,
+        color: recap.phase === 'done' ? theme.done : theme.warn,
+      }
+  const points = recap.points.flatMap(point => {
+    const needsYou = NEEDS_YOU.test(point)
+    const text = needsYou ? `Needs you: ${point.replace(NEEDS_YOU, '')}` : point
+    return wrapText(text, textWidth).map(
+      (line, i): RecapLine => ({
+        kind: 'point',
+        text: `${i === 0 ? (needsYou ? '  ➜ ' : '  • ') : '    '}${line}`,
+        color: needsYou ? theme.warn : undefined,
+        isBold: needsYou && i === 0,
+      }),
+    )
+  })
+  const lines: RecapLine[] = [rule, status, rule, heading('heading', recap.isResumed ? 'Where you left off' : 'What Claude did'), ...points]
+  if (steps.length > 0) {
+    lines.push(rule, heading('stepsHeading', 'Steps'))
+    for (const step of steps) {
+      const mark = step.status === 'done' ? theme.icons.done : step.status === 'active' ? theme.icons.active : theme.icons.upcoming
+      lines.push({ kind: 'step', text: `  ${mark}${step.name}`, color: step.status === 'done' ? theme.done : undefined, isDim: step.status === 'upcoming' })
+    }
+  }
+  if (recap.lastAsked !== '') {
+    lines.push(rule, heading('askedHeading', 'You last asked'))
+    for (const line of wrapText(`“${recap.lastAsked}”`, textWidth)) {
+      lines.push({ kind: 'asked', text: `    ${line}`, isDim: true })
+    }
+  }
+  return lines
+}
+
+/**
+ * Fits the recap into `budget` rows, dropping the least useful lines first: the rules, then the steps, then what
+ * was asked, then all but the first point. The status line and one point always stay.
+ */
+export function fitRecap(lines: readonly RecapLine[], budget: number): RecapLine[] {
+  let kept = [...lines]
+  const without = (kinds: readonly LineKind[]) => kept.filter(line => !kinds.includes(line.kind))
+  if (kept.length > budget) kept = without(['divider'])
+  if (kept.length > budget) kept = without(['stepsHeading', 'step'])
+  if (kept.length > budget) kept = without(['askedHeading', 'asked'])
+  // then points from the end, always keeping the first
+  while (kept.length > budget) {
+    const first = kept.findIndex(line => line.kind === 'point')
+    const last = kept.map(line => line.kind).lastIndexOf('point')
+    if (last <= first) break
+    kept.splice(last, 1)
+  }
+  if (kept.length > budget) kept = without(['heading'])
+  return kept
+}
+
+/**
+ * Fits the checklist into `budget` rows: finished steps fold into one "N steps done" row, then the steps after
+ * the current one fold into "N more".
+ */
+export function fitChecklist(tasks: readonly ChecklistTask[], budget: number) {
+  if (tasks.length <= budget) {
+    return { foldedDone: 0, shown: [...tasks], foldedAfter: 0 }
+  }
+  const done = tasks.filter(task => task.status === 'done').length
+  const rest = tasks.filter(task => task.status !== 'done')
+  const room = Math.max(1, budget - (done > 0 ? 1 : 0))
+  if (rest.length <= room) {
+    return { foldedDone: done, shown: rest, foldedAfter: 0 }
+  }
+  const shown = rest.slice(0, Math.max(1, room - 1))
+  return { foldedDone: done, shown, foldedAfter: rest.length - shown.length }
+}
+
 export function registerCalmMode(on: On, options?: unknown): void {
   const configured = normalizeSettings(options)
 
@@ -964,11 +1092,11 @@ export function registerCalmMode(on: On, options?: unknown): void {
     await $.tool.register({
       name: 'plan_steps',
       description:
-        'Lay out every step of the job up front for the Calm Mode checklist: 2 to 8 short, plain-English names in order, each under 40 characters and starting with a verb. The first step starts right away. Call this first for every request.',
+        'Lay out every step of the job up front for the Calm Mode checklist: 2 to 12 short, plain-English names in order, each under 60 characters and starting with a verb. The first step starts right away. Call this first for every request.',
       inputSchema: {
         type: 'object',
         properties: {
-          steps: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 8 },
+          steps: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: MAX_STEPS },
         },
         required: ['steps'],
       },
@@ -1022,9 +1150,9 @@ export function registerCalmMode(on: On, options?: unknown): void {
       text: [
         '# Calm Mode',
         'The person sees a simple checklist instead of tool calls. Keep it accurate:',
-        `- For every request, even a quick question, call \`${PLAN_TOOL}\` first with 2 to 8 steps. If it is deferred, load it with ToolSearch first.`,
+        `- For every request, even a quick question, call \`${PLAN_TOOL}\` first with 2 to 12 steps. If it is deferred, load it with ToolSearch first.`,
         `- Then call \`${PROGRESS_TOOL}\` as real progress happens, and with percent 100 the moment a step finishes.`,
-        '- Write every step name in plain English a non-technical person understands. Keep it under 40 characters and start it with a verb, like "Build the pricing section".',
+        '- Write every step name in plain English a non-technical person understands. Keep it under 60 characters and start it with a verb, like "Build the pricing section".',
         '- Never put file paths, file names, commands, code or tool names in a step name.',
         '- If TodoWrite or TaskCreate is available, you may use your to-do list as the plan instead.',
       ].join('\n'),
@@ -1062,9 +1190,9 @@ export function registerCalmMode(on: On, options?: unknown): void {
 
   on('tool.call', { tool: PLAN_TOOL }, async ($, e) => {
     const raw = (e as unknown as { steps?: unknown }).steps
-    const names = (Array.isArray(raw) ? raw : []).slice(0, 8).map(cleanName)
+    const names = (Array.isArray(raw) ? raw : []).slice(0, MAX_STEPS).map(cleanName)
     if (names.length === 0) {
-      return { deny: 'Give plan_steps 2 to 8 short step names.' }
+      return { deny: 'Give plan_steps 2 to 12 short step names.' }
     }
     const list = await read($, checklistAtom)
     if (list === null) {
@@ -1455,6 +1583,13 @@ export function registerCalmMode(on: On, options?: unknown): void {
           />
           <Text> </Text>
           <Button
+            key="set-recap-style"
+            label={`Recap: ${settings.recapStyle === 'pane' ? 'Pane' : 'Band'}`}
+            dimColor={!settings.awayRecap}
+            onPress={() => setOption($, 'recapStyle', settings.recapStyle === 'pane' ? 'band' : 'pane')}
+          />
+          <Text> </Text>
+          <Button
             key="set-cache"
             label={`Cache in status line: ${settings.cacheMeter ? 'ON' : 'OFF'}`}
             dimColor={!settings.cacheMeter}
@@ -1484,79 +1619,56 @@ export function registerCalmMode(on: On, options?: unknown): void {
       </Box>
     ) : null
 
+    // Rows the open settings row takes: its buttons wrap across the band, then two text fields.
+    const settingsRows = isSettingsOpen ? Math.ceil(260 / columns) + (Input === undefined ? 0 : 2) : 0
+
     if (recap !== null && recap.isShowing) {
       const awayFor = theme.duration(now - recap.awaySince)
       const recapTick = await read($, tickAtom)
-      const icon =
-        recap.phase === 'done' ? theme.icons.done : recap.phase === 'needsYou' ? theme.icons.paused : '■ '
-      const outcome =
-        recap.phase === 'done'
-          ? `took ${theme.duration(recap.tookMs)}`
-          : recap.phase === 'needsYou'
-            ? 'waiting for your reply'
-            : recap.phase === 'stuck'
-              ? 'stuck'
-              : 'stopped'
-      // Readable at a glance: short labelled sections, bullets wrapped with a hanging indent, at most 76 columns
-      // wide however wide the terminal, and anything waiting on the person in the warning color.
-      // No frame: the band's own header row (with ⚙ and the on/off button, as on every screen) spans the band,
-      // and thin rules set the recap's sections apart. The recap itself reads at most 80 columns wide.
-      const innerWidth = Math.min(columns, 80)
-      const textWidth = Math.max(16, innerWidth - 4)
-      const statusLine = recap.isResumed
-        ? `↻ Resumed session${recap.isCacheCold ? `${theme.sep}cache expired, your next message re-reads everything` : ''}`
-        : `${icon}${recap.title}${theme.sep}${outcome}${recap.stepsTotal > 0 ? `${theme.sep}${recap.stepsDone}/${recap.stepsTotal} steps` : ''}`
-      const bullets = recap.points.flatMap((point, p) => {
-        const needsYou = NEEDS_YOU.test(point)
-        const text = needsYou ? point.replace(NEEDS_YOU, '') : point
-        const lines = wrapText(needsYou ? `Needs you: ${text}` : text, textWidth)
-        return lines.map((line, i) => (
-          <Text key={`point-${p}-${i}`} wrap="truncate" color={needsYou ? theme.warn : undefined} bold={needsYou && i === 0}>
-            {`${i === 0 ? (needsYou ? '  ➜ ' : '  • ') : '    '}${line}`}
-          </Text>
-        ))
-      })
-      const asked = recap.lastAsked === '' ? [] : wrapText(`“${recap.lastAsked}”`, textWidth)
-      // Thin rules between the sections, in the rows the blank spacers took, so the card is no taller.
-      const divider = (
-        <Text dimColor color={settings.cyberpunk ? theme.title : undefined}>
-          {(settings.cyberpunk ? '┄' : '─').repeat(innerWidth)}
-        </Text>
+      const recapHeader = (
+        <Box flexDirection="row" justifyContent="space-between" width={columns}>
+          <Box width={headerRoom}>
+            <Text wrap="truncate" bold color={theme.title ?? theme.accent}>
+              {`↩ ${theme.shout('Welcome back')}${theme.sep}away ${awayFor}`}
+            </Text>
+          </Box>
+          {buttons}
+        </Box>
       )
+      const gotIt = <Button key="recap-ok" label="Got it" variant="primary" onPress={() => dismissRecap($)} />
+
+      // Pane style: the card reads in a pane; the band keeps one line to open it again.
+      if (settings.recapStyle === 'pane') {
+        return (
+          <Box flexDirection="column" width={columns} key={`recap-${recapTick}`}>
+            {recapHeader}
+            <Box flexDirection="row">
+              <Button
+                key="recap-open"
+                label="Open recap"
+                onPress={() => $.ui.open({ id: RECAP_PANE, title: 'Welcome back' })}
+              />
+              <Text> </Text>
+              {gotIt}
+            </Box>
+            {settingsRow}
+          </Box>
+        )
+      }
+
+      // Band style: full width, and only as many lines as the band has rows (header and Got it take two).
+      const budget = Math.max(2, e.props.maxRows - 2 - settingsRows)
+      const lines = fitRecap(recapLines(recap, theme, settings.cyberpunk, columns), budget)
       return (
         <Box flexDirection="column" width={columns} key={`recap-${recapTick}`}>
-          <Box flexDirection="row" justifyContent="space-between" width={columns}>
-            <Box width={headerRoom}>
-              <Text wrap="truncate" bold color={theme.title ?? theme.accent}>
-                {`↩ ${theme.shout('Welcome back')}${theme.sep}away ${awayFor}`}
-              </Text>
-            </Box>
-            {buttons}
-          </Box>
-          {divider}
-          <Box flexDirection="column" width={innerWidth}>
-            <Text wrap="truncate" color={recap.isResumed ? (recap.isCacheCold ? theme.warn : theme.accent) : recap.phase === 'done' ? theme.done : theme.warn}>
-              {statusLine}
+          {recapHeader}
+          {lines.map((line, i) => (
+            <Text key={`recap-line-${i}`} wrap="truncate" color={line.color} bold={line.isBold} dimColor={line.isDim}>
+              {line.text}
             </Text>
-            {divider}
-            <Text bold dimColor={!settings.cyberpunk} color={settings.cyberpunk ? theme.accent : undefined}>
-              {theme.shout(recap.isResumed ? 'Where you left off' : 'What Claude did')}
-            </Text>
-            {bullets}
-            {asked.length === 0 ? null : (
-              <Box flexDirection="column">
-                {divider}
-                <Text bold dimColor={!settings.cyberpunk} color={settings.cyberpunk ? theme.accent : undefined}>
-                  {theme.shout('You last asked')}
-                </Text>
-                {asked.map((line, i) => (
-                  <Text key={`asked-${i}`} dimColor wrap="truncate">{`    ${line}`}</Text>
-                ))}
-              </Box>
-            )}
-            <Box flexDirection="row" justifyContent="flex-end" width={innerWidth}>
-              <Button key="recap-ok" label="Got it" variant="primary" onPress={() => dismissRecap($)} />
-            </Box>
+          ))}
+          <Box flexDirection="row" justifyContent="flex-end" width={columns}>
+            {gotIt}
           </Box>
           {settingsRow}
         </Box>
@@ -1640,8 +1752,11 @@ export function registerCalmMode(on: On, options?: unknown): void {
       name.length > nameWidth ? `${name.slice(0, nameWidth - 1)}…` : name.padEnd(nameWidth)
 
     const firstUpcoming = list.tasks.findIndex(task => task.status === 'upcoming')
+    // Never scroll: fold finished steps, then later ones, into one row each when the band is short.
+    const window = fitChecklist(list.tasks, Math.max(2, e.props.maxRows - 1 - settingsRows))
 
-    const rows = list.tasks.map((task, i) => {
+    const rows = window.shown.map(task => {
+      const i = list.tasks.indexOf(task)
       if (task.status === 'done') {
         return (
           <Box key={`row-${task.id}`} flexDirection="row">
@@ -1683,8 +1798,50 @@ export function registerCalmMode(on: On, options?: unknown): void {
     return (
       <Box flexDirection="column" width={columns}>
         {headerRow}
+        {window.foldedDone === 0 ? null : (
+          <Text key="folded-done" color={theme.done} wrap="truncate">
+            {`${theme.icons.done}${window.foldedDone} ${window.foldedDone === 1 ? 'step' : 'steps'} ${theme.labels.done.toLowerCase()}`}
+          </Text>
+        )}
         {rows}
+        {window.foldedAfter === 0 ? null : (
+          <Text key="folded-after" dimColor wrap="truncate">
+            {`${theme.icons.upcoming}…${window.foldedAfter} more ${window.foldedAfter === 1 ? 'step' : 'steps'}`}
+          </Text>
+        )}
         {settingsRow}
+      </Box>
+    )
+  })
+
+  // The recap in a pane: full width of the pane, with the job's steps, scrolling if it must.
+  on('ui.render', { component: 'Pane', requestId: RECAP_PANE }, async ($, e) => {
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const settings = await read($, settingsAtom)
+    const recap = await read($, recapAtom)
+    const theme = settings.cyberpunk ? CYBERPUNK : CLASSIC
+    if (recap === null) {
+      return <Text dimColor>Nothing to recap right now. Type /calm recap after a job.</Text>
+    }
+    const list = await read($, checklistAtom)
+    const steps = list !== null && list.jobId === recap.jobId ? list.tasks : []
+    const width = Math.max(20, e.props.bodyColumns)
+    const now = await $.clock.now()
+    await read($, tickAtom)
+    const lines = recapLines(recap, theme, settings.cyberpunk, width, steps)
+    return (
+      <Box flexDirection="column" width={width}>
+        <Text bold color={theme.title ?? theme.accent} wrap="truncate">
+          {`↩ ${theme.shout('Welcome back')}${theme.sep}away ${theme.duration(now - recap.awaySince)}`}
+        </Text>
+        {lines.map((line, i) => (
+          <Text key={`pane-line-${i}`} wrap="truncate" color={line.color} bold={line.isBold} dimColor={line.isDim}>
+            {line.text}
+          </Text>
+        ))}
+        <Box flexDirection="row" justifyContent="flex-end" width={width}>
+          <Button key="recap-pane-ok" label="Got it" variant="primary" onPress={() => dismissRecap($)} />
+        </Box>
       </Box>
     )
   })
