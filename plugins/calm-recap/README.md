@@ -3,7 +3,7 @@
 The Welcome back card, the prompt-cache meter and the weather from [Calm Mode](../../README.md), on their own: no checklist, no plan-first rule, no hidden tool rows. Your Claude Code looks exactly as usual until you step away.
 
 ```
-↩ Welcome back · away 18m           📍 Bangkok ⛅ 31°C  ⚙ [ ● Calm Recap: ON ]
+↩ Welcome back · away 18m           📍 Bangkok ⛅ 31°C  ⚙ [ ● Calm Recap ]
 ────────────────────────────────────────────────────────────────
 ✓ Answered · took 1m 30s
 ────────────────────────────────────────────────────────────────

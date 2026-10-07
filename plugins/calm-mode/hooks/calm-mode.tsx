@@ -278,6 +278,7 @@ export const SETTINGS_TABS: ReadonlyArray<{ id: SettingsTab; name: string }> = [
 
 export const settingsTabAtom = atom({ plugin: 'calm-mode', key: 'settingsTab' } as const, 'display')
 export const settingsHintAtom = atom({ plugin: 'calm-mode', key: 'settingsHint' } as const, null)
+export const labelDraftAtom = atom({ plugin: 'calm-mode', key: 'labelDraft' } as const, null)
 
 /** What each setting does, in one short line: beside its switch, and in the hint after a change. */
 export const SETTING_HELP: Record<keyof CalmSettings, string> = {
@@ -313,7 +314,8 @@ const SETTING_NAMES: Record<keyof CalmSettings, string> = {
 }
 
 /** Every switch reads the same way. */
-export const onOff = (isOn: boolean) => (isOn ? '◉ On' : '○ Off')
+/** Every switch is an icon: ◉ on, ○ off. */
+export const onOff = (isOn: boolean) => (isOn ? '◉' : '○')
 
 /** "Volume: 45%. Background music loudness" — the line under the panel after a change. */
 export function settingHint<K extends keyof CalmSettings>(field: K, value: CalmSettings[K]): string {
@@ -334,6 +336,12 @@ export function settingHint<K extends keyof CalmSettings>(field: K, value: CalmS
                 ? 'default'
                 : `"${String(value)}"`
   return `${SETTING_NAMES[field]}: ${shown}. ${SETTING_HELP[field]}.`
+}
+
+/** Saves the Button label typed in the panel and clears the preview's draft. */
+async function saveLabel($: Engine, value: string) {
+  await update($, labelDraftAtom, () => null)
+  await setOption($, 'buttonLabel', value)
 }
 
 /** Puts every setting back to its default; the status line is left as it is (that one edits your settings file). */
@@ -470,11 +478,11 @@ export function stepAwayMinutes(minutes: number, direction: 1 | -1): number {
   return next ?? minutes
 }
 
-/** The on/off button's text: "● Calm Mode: ON", or "🍃 CALM MODE//ON" in cyberpunk. */
+/** The on/off button's text: "● Calm Mode" (○ when off), or "🍃 CALM MODE ⏻" (⭘ when off) in cyberpunk. */
 export function toggleLabel(settings: CalmSettings, isEnabled: boolean): string {
   return settings.cyberpunk
-    ? `🍃 ${settings.buttonLabel.toUpperCase()}//${isEnabled ? 'ON' : 'OFF'}`
-    : `${isEnabled ? '●' : '○'} ${settings.buttonLabel}: ${isEnabled ? 'ON' : 'OFF'}`
+    ? `🍃 ${settings.buttonLabel.toUpperCase()} ${isEnabled ? '⏻' : '⭘'}`
+    : `${isEnabled ? '●' : '○'} ${settings.buttonLabel}`
 }
 
 async function isHidingToolRows($: Engine) {
@@ -1844,6 +1852,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
     const tab = await read($, settingsTabAtom)
     const hint = await read($, settingsHintAtom)
     const keepWarm = await read($, keepWarmAtom)
+    const labelDraft = await read($, labelDraftAtom)
     const labelWidth = 18
     const name = (text: string, isOff = false) => <Text dimColor={isOff}>{`  ${text.padEnd(labelWidth)}`}</Text>
     const about = (text: string) => <Text dimColor wrap="truncate">{`  ${text}`}</Text>
@@ -1906,7 +1915,8 @@ export function registerCalmMode(on: On, options?: unknown): void {
       Input === undefined
         ? { display: [], music: [], recap: [], status: [] }
         : {
-            display: [<Input key="set-label" label={`  ${'Button label'.padEnd(labelWidth)}`} placeholder={DEFAULT_LABEL} value={settings.buttonLabel} submitLabel="save" onSubmit={value => setOption($, 'buttonLabel', value)} />],
+            display: [<Input key="set-label" label={`  ${'Button label'.padEnd(labelWidth)}`} placeholder={DEFAULT_LABEL} value={settings.buttonLabel} submitLabel="save" onInput={value => update($, labelDraftAtom, () => value)} onSubmit={value => saveLabel($, value)} />,
+            <Text key="label-preview" dimColor>{`  ${'Preview'.padEnd(labelWidth)}[ ${toggleLabel(normalizeSettings({ ...settings, buttonLabel: labelDraft ?? settings.buttonLabel }), isEnabled)} ]`}</Text>],
             music: [<Input key="set-music-file" label={`  ${'Music file'.padEnd(labelWidth)}`} placeholder="built-in tracks" value={settings.musicFile} submitLabel="save" onSubmit={value => setOption($, 'musicFile', value)} />],
             recap: [],
             status: [],

@@ -104,6 +104,8 @@ declare module 'claude-code' {
       settingsTab: SettingsTab
       /** One line on the setting changed last, shown under the panel. */
       settingsHint: string | null
+      /** The Button label as it is being typed, for the live preview; null when nothing is being typed. */
+      labelDraft: string | null
       /** The latest weather reading, while the weather is turned on. */
       weather: { symbol: string; tempC: number; city: string } | null
       /** Keep-warm for this session. */
