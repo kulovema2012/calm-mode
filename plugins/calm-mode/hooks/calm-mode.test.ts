@@ -734,3 +734,17 @@ test('Reset puts every setting back but leaves the status line alone', { options
   expect(await ui.find({ type: 'Text', text: /back to its default/ })).toBeDefined()
   await ui.unmount()
 })
+
+test('the job timer starts in the same column as the progress bars', async ($, on) => {
+  await start($, on)
+  await $.tool.call({ tool: PLAN_TOOL, steps: ['Read your notes', 'Build the page'] } as never)
+  await $.tool.call({ tool: PROGRESS_TOOL, task: 'Build the page', percent: 60 } as never)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  const title = await ui.find({ type: 'Text', text: /^Build my landing page +$/ })
+  const timer = await ui.find({ type: 'Text', text: /^⏱ / })
+  const name = await ui.find({ type: 'Text', text: /^Build the page +$/ })
+  expect(timer).toBeDefined()
+  // the title cell spans the icon (2) and the name cell, so both start the next text at the same column
+  expect(String(title?.text).length).toBe(2 + String(name?.text).length)
+  await ui.unmount()
+})

@@ -1749,6 +1749,9 @@ export function registerCalmMode(on: On, options?: unknown): void {
     const elapsed = theme.duration((list.finishedAt ?? now) - list.startedAt)
     const title = theme.shout(list.title)
     const sep = theme.sep
+    // Step rows: icon(2) + name + gap(1) + meter(10) + label(9). The bars start at `barColumn`.
+    const nameWidth = Math.max(6, Math.min(NAME_LIMIT, columns - 2 - 1 - METER_CELLS - 9))
+    const barColumn = 2 + nameWidth + 1
     const header = (() => {
       switch (list.phase) {
         case 'needsYou':
@@ -1778,15 +1781,20 @@ export function registerCalmMode(on: On, options?: unknown): void {
               {`${theme.icons.done}${theme.shout('All done')}${sep}${title}${sep}took ${elapsed}`}
             </Text>
           )
-        default:
+        default: {
+          // The timer starts in the column the progress bars start in, so it reads as part of that column.
+          const titleText = `${theme.headerMark}${title}`
+          const titleCell =
+            titleText.length > barColumn - 1 ? `${titleText.slice(0, barColumn - 2)}… ` : titleText.padEnd(barColumn)
           return (
             <Text wrap="truncate">
-              <Text bold color={theme.title}>{`${theme.headerMark}${title}`}</Text>
+              <Text bold color={theme.title}>{titleCell}</Text>
               <Text dimColor={!settings.cyberpunk} color={settings.cyberpunk ? theme.accent : undefined}>
-                {`${sep}${elapsed}`}
+                {`⏱ ${elapsed}`}
               </Text>
             </Text>
           )
+        }
       }
     })()
 
@@ -1806,8 +1814,6 @@ export function registerCalmMode(on: On, options?: unknown): void {
       )
     }
 
-    // icon(2) + name + gap(1) + meter(10) + label(9)
-    const nameWidth = Math.max(6, Math.min(NAME_LIMIT, columns - 2 - 1 - METER_CELLS - 9))
     const fit = (name: string) =>
       name.length > nameWidth ? `${name.slice(0, nameWidth - 1)}…` : name.padEnd(nameWidth)
 

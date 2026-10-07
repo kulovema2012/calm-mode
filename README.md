@@ -5,7 +5,7 @@ A Claude Code mod that makes Claude feel calm and friendly for people who aren't
 While Claude works, the tool calls, file diffs and command output are hidden. One simple checklist sits above the prompt, so you can always see the plan, what's happening now and how far along it is:
 
 ```
-Build my landing page · 1m 12s                      [ ● Calm Mode: ON ]
+Build my landing page              ⏱ 1m 12s       ⚙ [ ● Calm Mode: ON ]
 ✓ Read your brand notes            ██████████  Done
 ▶ Build the pricing section        ██████░░░░  60%
 ○ Add the contact form             ░░░░░░░░░░  Next
