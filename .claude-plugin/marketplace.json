@@ -1,6 +1,9 @@
 {
   "name": "calm-mode",
-  "description": "Calm Mode for Claude Code: a friendly checklist instead of tool calls.",
+  "description": "Calm Mode for Claude Code: a friendly checklist instead of tool calls, and Calm Recap: a Welcome back card and a prompt-cache meter on their own.",
   "owner": { "name": "Newk" },
-  "plugins": [{ "name": "calm-mode", "source": "./" }]
+  "plugins": [
+    { "name": "calm-mode", "source": "./plugins/calm-mode" },
+    { "name": "calm-recap", "source": "./plugins/calm-recap" }
+  ]
 }

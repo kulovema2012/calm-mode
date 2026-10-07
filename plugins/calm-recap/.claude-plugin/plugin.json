@@ -1,0 +1,40 @@
+{
+  "name": "calm-recap",
+  "version": "0.1.0",
+  "description": "Calm Recap: a Welcome back card when you return to the keyboard, and the prompt cache's hit rate and time left in your status line.",
+  "author": { "name": "Newk" },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "buttonLabel": {
+      "type": "string",
+      "title": "Button label",
+      "description": "The words on the on/off button, up to 20 characters.",
+      "default": "Calm Recap"
+    },
+    "cyberpunk": {
+      "type": "boolean",
+      "title": "Cyberpunk theme",
+      "description": "Neon pink titles, cyan accents and yellow alerts.",
+      "default": false
+    },
+    "awayMinutes": {
+      "type": "number",
+      "title": "Away after (minutes)",
+      "description": "Minutes of quiet after Claude answers before the Welcome back card appears (1 to 120).",
+      "default": 5
+    },
+    "recapStyle": {
+      "type": "string",
+      "title": "Recap style",
+      "description": "Where the Welcome back recap reads: band (above the prompt, fitted to its rows) or pane (a larger panel of its own).",
+      "default": "band",
+      "options": ["band", "pane"]
+    },
+    "cacheMeter": {
+      "type": "boolean",
+      "title": "Cache in status line",
+      "description": "Whether the cache meter is in your status line. Change it with the button in the settings panel or /recap statusline on|off, which edit your status line for you.",
+      "default": false
+    }
+  }
+}
