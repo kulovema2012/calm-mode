@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, On, Timer } from 'claude-code'
 
-import type { CalmSettings, Checklist, ChecklistTask } from '../types'
+import type { CalmSettings, Checklist, ChecklistTask, TrackChoice } from '../types'
 
 type Engine = EngineInterface
 
@@ -214,6 +214,7 @@ const runtime: {
   isTurnRunning: boolean
   lastApiError: { kind: string; details: string } | null
   music: { key: string; stop: () => void } | null
+  shuffle: { jobId: number; track: string } | null
 } = {
   frameTimer: null,
   collapseTimer: null,
@@ -221,6 +222,7 @@ const runtime: {
   isTurnRunning: false,
   lastApiError: null,
   music: null,
+  shuffle: null,
 }
 
 /** Runs the 250ms animation clock only while a job is working or waiting on the person. */
@@ -290,6 +292,24 @@ async function nameJob($: Engine, jobId: number, prompt: string) {
 const DEFAULT_LABEL = 'Calm Mode'
 const LABEL_LIMIT = 20
 
+/** The built-in tracks (sounds/<id>.wav, made by tools/make_tracks.py), then shuffle. */
+export const TRACKS = [
+  { id: 'neon-drive', name: 'Neon Drive' },
+  { id: 'night-rain', name: 'Night Rain' },
+  { id: 'hacker-pulse', name: 'Hacker Pulse' },
+  { id: 'chrome-ambient', name: 'Chrome Ambient' },
+] as const satisfies ReadonlyArray<{ id: TrackChoice; name: string }>
+const TRACK_CHOICES: readonly TrackChoice[] = [...TRACKS.map(track => track.id), 'shuffle']
+
+/** The next choice after `current`, wrapping around: what the track button steps to. */
+export function nextTrack(current: TrackChoice): TrackChoice {
+  return TRACK_CHOICES[(TRACK_CHOICES.indexOf(current) + 1) % TRACK_CHOICES.length] ?? 'neon-drive'
+}
+
+export function trackName(choice: TrackChoice): string {
+  return TRACKS.find(track => track.id === choice)?.name ?? 'Shuffle'
+}
+
 export const DEFAULT_SETTINGS: CalmSettings = {
   hideToolRows: true,
   jobNaming: true,
@@ -298,6 +318,7 @@ export const DEFAULT_SETTINGS: CalmSettings = {
   music: true,
   musicFile: '',
   musicVolume: 35,
+  track: 'neon-drive',
 }
 
 export const settingsAtom = atom({ plugin: 'calm-mode', key: 'settings' } as const, DEFAULT_SETTINGS)
@@ -316,6 +337,7 @@ export function normalizeSettings(options: unknown): CalmSettings {
     cyberpunk: flag('cyberpunk', DEFAULT_SETTINGS.cyberpunk),
     music: flag('music', DEFAULT_SETTINGS.music),
     musicVolume: clampVolume(raw.musicVolume),
+    track: TRACK_CHOICES.includes(raw.track as TrackChoice) ? (raw.track as TrackChoice) : 'neon-drive',
     musicFile: typeof raw.musicFile === 'string' ? raw.musicFile.trim().replace(/^["']+|["']+$/g, '') : '',
   }
 }
@@ -365,7 +387,6 @@ async function setOption<K extends keyof CalmSettings>($: Engine, field: K, valu
 // MediaPlayer and Linux uses ffplay. The child dies with the module, and the
 // PowerShell script also exits on its own if its parent process goes away.
 
-const BUILT_IN_TRACK = 'sounds/cyberpunk-loop.wav'
 const VOLUME_STEP = 10
 
 /** PowerShell's -EncodedCommand takes UTF-16LE text as base64. */
@@ -402,12 +423,12 @@ export function windowsMusicScript(path: string, volume: number): string {
 }
 
 /** The command that loops `file` (empty: the built-in track) here, or null where $.audio.play does it. */
-export function musicCommand(root: string, file: string, volume: number): string[] | null {
+export function musicCommand(root: string, file: string, volume: number, asset = 'sounds/neon-drive.wav'): string[] | null {
   const level = clampVolume(volume)
   const isWindows = /^[A-Za-z]:[\\/]/.test(root)
   const isMac = root.startsWith('/Users/')
   const sep = isWindows ? '\\' : '/'
-  const path = file === '' ? `${root}${sep}${BUILT_IN_TRACK.split('/').join(sep)}` : file
+  const path = file === '' ? `${root}${sep}${asset.split('/').join(sep)}` : file
   if (isWindows) {
     return [
       'powershell',
@@ -428,12 +449,12 @@ export function musicCommand(root: string, file: string, volume: number): string
 }
 
 /** Starts the loop and hands back the way to stop it. */
-function startMusic($: Engine, file: string, volume: number): () => void {
-  const argv = musicCommand($.plugin.root, file, volume)
+function startMusic($: Engine, file: string, volume: number, asset: string): () => void {
+  const argv = musicCommand($.plugin.root, file, volume, asset)
   if (argv === null) {
     const controller = new AbortController()
     void $.audio
-      .play({ asset: BUILT_IN_TRACK }, { shouldLoop: true, gain: clampVolume(volume) / 100, signal: controller.signal })
+      .play({ asset }, { shouldLoop: true, gain: clampVolume(volume) / 100, signal: controller.signal })
       .catch(() => undefined)
     return () => controller.abort()
   }
@@ -456,20 +477,34 @@ function startMusic($: Engine, file: string, volume: number): () => void {
   }
 }
 
+/** The track to play: the chosen one, or under shuffle one random track per job. */
+function pickTrack(choice: TrackChoice, jobId: number): string {
+  if (choice !== 'shuffle') {
+    return choice
+  }
+  if (runtime.shuffle?.jobId !== jobId) {
+    const pick = TRACKS[Math.floor(Math.random() * TRACKS.length)] ?? TRACKS[0]
+    runtime.shuffle = { jobId, track: pick.id }
+  }
+  return runtime.shuffle.track
+}
+
 /** Plays while Claude works with Calm Mode, Cyberpunk and Music all on; stops otherwise. */
 async function syncMusic($: Engine) {
   const isEnabled = await read($, enabledAtom)
   const settings = await read($, settingsAtom)
   const list = await read($, checklistAtom)
   const isWanted = isEnabled && settings.cyberpunk && settings.music && list?.phase === 'working'
-  // The key holds the file and the volume, so changing either restarts the player.
-  const wanted = isWanted && settings.musicVolume > 0 ? `${settings.musicVolume}|${settings.musicFile}` : null
+  const asset = `sounds/${pickTrack(settings.track, list?.jobId ?? 0)}.wav`
+  // The key holds the track, the file and the volume, so changing any restarts the player.
+  const wanted =
+    isWanted && settings.musicVolume > 0 ? `${settings.musicVolume}|${asset}|${settings.musicFile}` : null
   if ((runtime.music?.key ?? null) === wanted) {
     return
   }
   runtime.music?.stop()
   runtime.music =
-    wanted === null ? null : { key: wanted, stop: startMusic($, settings.musicFile, settings.musicVolume) }
+    wanted === null ? null : { key: wanted, stop: startMusic($, settings.musicFile, settings.musicVolume, asset) }
 }
 
 // ── Themes ──────────────────────────────────────────────────────────────────
@@ -969,6 +1004,13 @@ export function registerCalmMode(on: On, options?: unknown): void {
             key="vol-up"
             label="+"
             onPress={() => setOption($, 'musicVolume', clampVolume(settings.musicVolume + VOLUME_STEP))}
+          />
+          <Text> </Text>
+          <Button
+            key="set-track"
+            label={`♪ Track: ${trackName(settings.track)}`}
+            dimColor={settings.musicFile !== ''}
+            onPress={() => setOption($, 'track', nextTrack(settings.track))}
           />
         </Box>
         {Input === undefined ? null : (

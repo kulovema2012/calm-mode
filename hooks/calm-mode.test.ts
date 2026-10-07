@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { clampVolume, cleanName, musicCommand, windowsMusicScript } from './calm-mode'
+import { clampVolume, cleanName, musicCommand, nextTrack, trackName, windowsMusicScript } from './calm-mode'
 
 /** argv of every player the plugin started in the current test. */
 let spawned: string[][] = []
@@ -246,7 +246,7 @@ test('music command per platform, built-in track by default', () => {
   expect(musicCommand('/Users/newk/calm-mode', '', 35)).toBeNull()
   expect(musicCommand('/Users/newk/calm-mode', '/Users/newk/song.mp3', 35)?.[0]).toBe('/bin/sh')
   expect(musicCommand('/home/newk/calm-mode', '', 35)).toEqual([
-    'ffplay', '-nodisp', '-loglevel', 'quiet', '-loop', '0', '-volume', '35', '/home/newk/calm-mode/sounds/cyberpunk-loop.wav',
+    'ffplay', '-nodisp', '-loglevel', 'quiet', '-loop', '0', '-volume', '35', '/home/newk/calm-mode/sounds/neon-drive.wav',
   ])
 })
 
@@ -303,4 +303,37 @@ test('the volume buttons step the music volume by 10', async ($, on) => {
 test('volume 0 keeps the player off', { options: { cyberpunk: true, musicVolume: 0 } }, async ($, on) => {
   await start($, on)
   expect(spawned.length).toBe(0)
+})
+
+// ── Tracks (v0.4.0) ────────────────────────────────────────────────────────
+
+test('the track button cycles through every track, then shuffle, then wraps', () => {
+  expect(nextTrack('neon-drive')).toBe('night-rain')
+  expect(nextTrack('chrome-ambient')).toBe('shuffle')
+  expect(nextTrack('shuffle')).toBe('neon-drive')
+  expect(trackName('hacker-pulse')).toBe('Hacker Pulse')
+  expect(trackName('shuffle')).toBe('Shuffle')
+})
+
+test('the chosen track is the one that plays', { options: { cyberpunk: true, track: 'night-rain' } }, async ($, on) => {
+  await start($, on)
+  expect(spawned.length).toBe(1)
+  expect(musicCommand('/home/newk/calm-mode', '', 35, 'sounds/night-rain.wav')).toContain(
+    '/home/newk/calm-mode/sounds/night-rain.wav',
+  )
+})
+
+test('shuffle plays one of the built-in tracks', { options: { cyberpunk: true, track: 'shuffle' } }, async ($, on) => {
+  await start($, on)
+  expect(spawned.length).toBe(1)
+})
+
+test('the track button shows and steps the track', async ($, on) => {
+  await start($, on)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await ui.press({ key: 'calm-settings' })
+  expect((await ui.find({ key: 'set-track' }))?.props.label).toBe('♪ Track: Neon Drive')
+  await ui.press({ key: 'set-track' })
+  expect((await ui.find({ key: 'set-track' }))?.props.label).toBe('♪ Track: Night Rain')
+  await ui.unmount()
 })

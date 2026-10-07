@@ -1,6 +1,6 @@
 {
   "name": "calm-mode",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Calm Mode: hides tool calls and shows one friendly checklist above the prompt while Claude works.",
   "author": { "name": "Newk" },
   "types": "./types/index.d.ts",
@@ -46,6 +46,13 @@
       "title": "Music volume",
       "description": "Background music volume from 0 to 100 percent.",
       "default": 35
+    },
+    "track": {
+      "type": "string",
+      "title": "Music track",
+      "description": "Built-in track to play when no music file is set; shuffle picks a random one each job.",
+      "default": "neon-drive",
+      "options": ["neon-drive", "night-rain", "hacker-pulse", "chrome-ambient", "shuffle"]
     }
   }
 }

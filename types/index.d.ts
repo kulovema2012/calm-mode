@@ -25,6 +25,9 @@ export type Checklist = {
   isCollapsed: boolean
 }
 
+/** A built-in track's id, or shuffle for a random one each job. */
+export type TrackChoice = 'neon-drive' | 'night-rain' | 'hacker-pulse' | 'chrome-ambient' | 'shuffle'
+
 export type CalmSettings = {
   /** Hide tool calls, results and progress hints while Calm Mode is on. */
   hideToolRows: boolean
@@ -40,6 +43,8 @@ export type CalmSettings = {
   musicFile: string
   /** Music volume, 0 to 100 percent; 0 keeps the player off. */
   musicVolume: number
+  /** Which built-in track plays when no music file is set. */
+  track: TrackChoice
 }
 
 declare module 'claude-code' {
