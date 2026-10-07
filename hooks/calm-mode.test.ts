@@ -518,15 +518,15 @@ test('no resume card with the away recap off', { options: { awayRecap: false } }
   await ui.unmount()
 })
 
-test('the Welcome back card is framed: round normally, double in cyberpunk', async ($, on) => {
+test('the Welcome back card has no frame on any surface', async ($, on) => {
   on('session.messages', () => ({ value: [{ role: 'assistant', text: 'Done.', toolUses: [] }] }) as never)
   const clock = await start($, on)
   await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: 600 } as never)
   await clock.advance(600)
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...BAND, surface })
-    const frames = (await ui.findAll({ type: 'Box' })).filter(box => box.props.borderStyle !== undefined)
-    expect(frames.map(box => box.props.borderStyle)).toEqual(['round'])
+    expect(await ui.find({ type: 'Text', text: /Welcome back/ })).toBeDefined()
+    expect((await ui.findAll({ type: 'Box' })).some(box => box.props.borderStyle !== undefined)).toBe(false)
     await ui.unmount()
   }
 })
@@ -538,15 +538,16 @@ test('the live checklist has no frame', async ($, on) => {
   await ui.unmount()
 })
 
-test('the cyberpunk Welcome back card has a double neon frame', { options: { cyberpunk: true } }, async ($, on) => {
+test('the cyberpunk Welcome back card uses dashed neon rules and no frame', { options: { cyberpunk: true } }, async ($, on) => {
   on('session.messages', () => ({ value: [{ role: 'assistant', text: 'Done.', toolUses: [] }] }) as never)
   const clock = await start($, on)
   await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: 600 } as never)
   await clock.advance(600)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  const frame = (await ui.findAll({ type: 'Box' })).find(box => box.props.borderStyle !== undefined)
-  expect(frame?.props.borderStyle).toBe('double')
-  expect(frame?.props.borderColor).toBe('#ff2bd6')
+  expect((await ui.findAll({ type: 'Box' })).some(box => box.props.borderStyle !== undefined)).toBe(false)
+  const rules = await ui.findAll({ type: 'Text', text: /^┄{20,}$/ })
+  expect(rules.length).toBe(2)
+  expect(rules[0]?.props.color).toBe('#ff2bd6')
   await ui.unmount()
 })
 
@@ -561,7 +562,8 @@ test('sections of the Welcome back card are split by thin rules', async ($, on) 
   await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: 600 } as never)
   await clock.advance(600)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect((await ui.findAll({ type: 'Text', text: /^─{20,}$/ })).length).toBe(2)
+  // under the header, after the status line, and before "You last asked"
+  expect((await ui.findAll({ type: 'Text', text: /^─{20,}$/ })).length).toBe(3)
   await ui.unmount()
 })
 
