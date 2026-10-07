@@ -22,7 +22,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SIDECAR = path.join(HERE, 'calm-cache-statusline.json');
 // Shared with the Calm Mode / Calm Recap plugin, one pair of files per session: this script writes
 // <session>.json (when the cache expires, and its lifetime) for the plugin's keep-warm, and reads
-// <session>.keepwarm.json (keep-warm on, and how long its last ping keeps the cache warm) for the 🔥.
+// <session>.keepwarm.json (keep-warm on, and how long its last ping keeps the cache warm) for the ♨ / 🔥.
 const STATE_DIR = path.join(HERE, '..', 'calm-cache-state');
 // Only the end of the transcript is read: enough for the newest request, cheap on long sessions.
 const TAIL_BYTES = 512 * 1024;
@@ -117,13 +117,13 @@ function shortTime(seconds) {
 
 /**
  * "⚡ cache 87% ▰▰▰▰▰▰▰▰▱▱ 47m 🔥": the newest request's hit rate, colored green at 70% and up, yellow from 30%, red
- * below, then a bar of the cache's lifetime left, and 🔥 while keep-warm is on. A keep-warm ping refreshes the cache
+ * below, then a bar of the cache's lifetime left, then ♨ while keep-warm is on and 🔥 once one of its pings is keeping the cache warm. A keep-warm ping refreshes the cache
  * without Claude Code knowing, so its "warm until" extends the lifetime shown. "❄ cache cold" once it has expired.
  */
 export function cacheSegment(usage, promptCache, nowMs, keepWarm = null) {
   const warmUntil = typeof keepWarm?.warmUntil === 'number' ? keepWarm.warmUntil / 1000 : 0;
-  const fire = keepWarm?.isOn ? ' 🔥' : '';
   const isKeptWarm = warmUntil > nowMs / 1000;
+  const fire = keepWarm?.isOn ? (isKeptWarm ? ' 🔥' : ' ♨') : '';
   if (promptCache && promptCache.caching_observed && promptCache.warm === false && !isKeptWarm) {
     return paint('90', '❄ cache cold') + fire;
   }

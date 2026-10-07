@@ -1086,7 +1086,7 @@ async function syncWeather($: Engine) {
 // question over this conversation ($.model.fork) reads it from the cache, which restarts the hour. Nothing is
 // added to the chat. It never wakes a cache that has already gone cold, skips 5-minute caches (pinging would cost
 // more than it saves), and stops after 20 pings in a row or at the time you gave. The status-line meter tells it
-// when the cache expires (<session>.json) and shows 🔥 from what it writes back (<session>.keepwarm.json).
+// when the cache expires (<session>.json) and shows ♨ / 🔥 from what it writes back (<session>.keepwarm.json).
 
 const KEEP_WARM_LEAD_MS = 5 * 60_000
 const KEEP_WARM_CHECK_MS = 60_000
@@ -1219,7 +1219,7 @@ async function startKeepWarm($: Engine, until: number | null) {
       ? 'Keep warm is on. It needs the cache meter in your status line to know when the cache expires.'
       : state.ttl === '5m'
         ? 'Keep warm is on, but this session uses the 5-minute cache, so it will not ping.'
-        : 'Keep warm is on: 🔥 in the status line',
+        : 'Keep warm is on: ♨ in the status line, 🔥 once a ping keeps the cache warm',
   )
 }
 
@@ -1949,7 +1949,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
           ),
           about(
             settings.cacheMeter
-              ? `Pings before the 1h cache expires (${keepWarm?.isOn === true ? `${keepWarm.pings}/${KEEP_WARM_MAX_PINGS} pings` : 'this session'}), 🔥`
+              ? `Pings before the 1h cache expires (${keepWarm?.isOn === true ? `${keepWarm.pings}/${KEEP_WARM_MAX_PINGS} pings` : 'this session'}), ♨ then 🔥`
               : 'Needs Cache in status line',
           ),
         ),

@@ -170,7 +170,7 @@ Turning it off puts your previous status line back. It follows the same wrapper 
 
 ### Keep warm
 
-Turn on **Keep warm** (Status line tab, or `/calm keepwarm on`) before you step away. About 5 minutes before the 1-hour prompt cache would expire, it asks Claude one hidden question over this conversation, which reads it from the cache and restarts the hour, so your next message does not pay to rebuild everything. Nothing is added to the chat, and the status line shows 🔥 while it is on: `⚡ cache 87% ▰▰▰▰▰▰▰▰▱▱ 47m 🔥`.
+Turn on **Keep warm** (Status line tab, or `/calm keepwarm on`) before you step away. About 5 minutes before the 1-hour prompt cache would expire, it asks Claude one hidden question over this conversation, which reads it from the cache and restarts the hour, so your next message does not pay to rebuild everything. Nothing is added to the chat, and the status line shows ♨ while it is on and 🔥 once a ping is keeping the cache warm: `⚡ cache 87% ▰▰▰▰▰▰▰▰▱▱ 47m 🔥`.
 
 | Command | Does |
 |---|---|
