@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, On, Timer } from 'claude-code'
 
-import type { AwayRecap, CalmSettings, Checklist, ChecklistTask, TrackChoice } from '../types'
+import type { AwayRecap, CalmSettings, Checklist, ChecklistTask, SettingsTab, TrackChoice } from '../types'
 
 type Engine = EngineInterface
 
@@ -263,6 +263,84 @@ async function finish($: Engine, fn: (list: Checklist) => Checklist) {
   await change($, list => ({ ...fn(list), finishedAt }))
 }
 
+// ── Settings panel ──────────────────────────────────────────────────────────
+
+export const SETTINGS_TABS: ReadonlyArray<{ id: SettingsTab; name: string }> = [
+  { id: 'display', name: 'Display' },
+  { id: 'music', name: 'Music' },
+  { id: 'recap', name: 'Recap' },
+  { id: 'status', name: 'Status line' },
+]
+
+export const settingsTabAtom = atom({ plugin: 'calm-mode', key: 'settingsTab' } as const, 'display')
+export const settingsHintAtom = atom({ plugin: 'calm-mode', key: 'settingsHint' } as const, null)
+
+/** What each setting does, in one short line: beside its switch, and in the hint after a change. */
+export const SETTING_HELP: Record<keyof CalmSettings, string> = {
+  hideToolRows: 'Hide tool calls while Claude works',
+  jobNaming: 'Haiku gives each job a short name',
+  buttonLabel: 'The words on the on/off button',
+  cyberpunk: 'Neon pink and cyan look',
+  music: 'Plays while Claude works',
+  musicFile: 'Your own MP3 or WAV instead of the tracks',
+  musicVolume: 'Background music loudness',
+  track: 'Built-in track, or Shuffle',
+  awayRecap: 'Welcome back card after you step away',
+  awayMinutes: 'How long you are quiet before it shows',
+  cacheMeter: 'Cache hit and time left, at its right end',
+  recapStyle: 'Band above the prompt, or a pane',
+}
+
+const SETTING_NAMES: Record<keyof CalmSettings, string> = {
+  hideToolRows: 'Hide tool rows',
+  jobNaming: 'Job naming',
+  buttonLabel: 'Button label',
+  cyberpunk: 'Cyberpunk',
+  music: 'Music',
+  musicFile: 'Music file',
+  musicVolume: 'Volume',
+  track: 'Track',
+  awayRecap: 'Away recap',
+  awayMinutes: 'Away after',
+  cacheMeter: 'Cache in status line',
+  recapStyle: 'Recap style',
+}
+
+/** Every switch reads the same way. */
+export const onOff = (isOn: boolean) => (isOn ? '◉ On' : '○ Off')
+
+/** "Volume: 45%. Background music loudness" — the line under the panel after a change. */
+export function settingHint<K extends keyof CalmSettings>(field: K, value: CalmSettings[K]): string {
+  const shown =
+    typeof value === 'boolean'
+      ? value
+        ? 'On'
+        : 'Off'
+      : field === 'musicVolume'
+        ? `${String(value)}%`
+        : field === 'awayMinutes'
+          ? `${String(value)} minutes`
+          : field === 'track'
+            ? trackName(value as TrackChoice)
+            : field === 'recapStyle'
+              ? value === 'pane' ? 'Pane' : 'Band'
+              : value === ''
+                ? 'default'
+                : `"${String(value)}"`
+  return `${SETTING_NAMES[field]}: ${shown}. ${SETTING_HELP[field]}.`
+}
+
+/** Puts every setting back to its default; the status line is left as it is (that one edits your settings file). */
+async function resetSettings($: Engine) {
+  const current = await read($, settingsAtom)
+  for (const field of Object.keys(DEFAULT_SETTINGS) as Array<keyof CalmSettings>) {
+    if (field !== 'cacheMeter' && current[field] !== DEFAULT_SETTINGS[field]) {
+      await setOption($, field, DEFAULT_SETTINGS[field])
+    }
+  }
+  await update($, settingsHintAtom, () => 'Every setting is back to its default. The status line is left as it is.')
+}
+
 async function setEnabled($: Engine, isEnabled: boolean) {
   await update($, enabledAtom, () => isEnabled)
   await $.store.set(STORE_KEY, isEnabled)
@@ -402,6 +480,7 @@ async function isHidingToolRows($: Engine) {
 async function setOption<K extends keyof CalmSettings>($: Engine, field: K, value: CalmSettings[K]) {
   const next = normalizeSettings({ ...(await read($, settingsAtom)), [field]: value })
   await update($, settingsAtom, () => next)
+  await update($, settingsHintAtom, () => settingHint(field, next[field]))
   await syncMusic($)
   const rows = await $.config.list().catch(() => [])
   const row = rows.find(r => r.key === `calm-mode.${field}`) ?? rows.find(r => r.key.startsWith('calm-mode') && r.key.endsWith(`.${field}`))
@@ -1511,116 +1590,97 @@ export function registerCalmMode(on: On, options?: unknown): void {
     const buttonsWidth = theme.gear.length + 1 + label.length + 4
     const headerRoom = Math.max(4, columns - buttonsWidth - 1)
 
+    // ── Settings: one tab at a time, each row "name · switch · what it does" ──
+    const tab = await read($, settingsTabAtom)
+    const hint = await read($, settingsHintAtom)
+    const labelWidth = 18
+    const name = (text: string, isOff = false) => <Text dimColor={isOff}>{`  ${text.padEnd(labelWidth)}`}</Text>
+    const about = (text: string) => <Text dimColor wrap="truncate">{`  ${text}`}</Text>
+    const toggle = (key: string, isOn: boolean, onPress: () => unknown, isDim = false) => (
+      <Button
+        key={key}
+        label={onOff(isOn)}
+        variant={isOn && !isDim ? 'primary' : undefined}
+        dimColor={!isOn || isDim}
+        onPress={onPress}
+      />
+    )
+    const stepper = (down: string, up: string, value: string, onDown: () => unknown, onUp: () => unknown, isDim = false) => (
+      <Box flexDirection="row">
+        <Button key={down} label="−" dimColor={isDim} onPress={onDown} />
+        <Text dimColor={isDim}>{` ${value} `}</Text>
+        <Button key={up} label="+" dimColor={isDim} onPress={onUp} />
+      </Box>
+    )
+    const row = (key: string, ...children: JSX.Element[]) => (
+      <Box key={key} flexDirection="row">
+        {children}
+      </Box>
+    )
+
+    const tabRows: Record<SettingsTab, JSX.Element[]> = {
+      display: [
+        row('r-hide', name('Hide tool rows'), toggle('set-hide', settings.hideToolRows, () => setOption($, 'hideToolRows', !settings.hideToolRows)), about(SETTING_HELP.hideToolRows)),
+        row('r-naming', name('Job naming'), toggle('set-naming', settings.jobNaming, () => setOption($, 'jobNaming', !settings.jobNaming)), about(SETTING_HELP.jobNaming)),
+        row('r-cyber', name('Cyberpunk'), toggle('set-cyber', settings.cyberpunk, () => setOption($, 'cyberpunk', !settings.cyberpunk)), about(SETTING_HELP.cyberpunk)),
+      ],
+      music: [
+        row('r-music', name('Music', !settings.cyberpunk), toggle('set-music', settings.music, () => setOption($, 'music', !settings.music), !settings.cyberpunk), about(settings.cyberpunk ? SETTING_HELP.music : 'Turn Cyberpunk on (Display tab) to hear it')),
+        row('r-volume', name('Volume'), stepper('vol-down', 'vol-up', `${settings.musicVolume}%`, () => setOption($, 'musicVolume', clampVolume(settings.musicVolume - VOLUME_STEP)), () => setOption($, 'musicVolume', clampVolume(settings.musicVolume + VOLUME_STEP))), about(SETTING_HELP.musicVolume)),
+        row('r-track', name('Track', settings.musicFile !== ''), <Button key="set-track" label={`♪ ${trackName(settings.track)}`} dimColor={settings.musicFile !== ''} onPress={() => setOption($, 'track', nextTrack(settings.track))} />, about(settings.musicFile !== '' ? 'Your music file plays instead' : SETTING_HELP.track)),
+      ],
+      recap: [
+        row('r-away', name('Away recap'), toggle('set-away', settings.awayRecap, () => setOption($, 'awayRecap', !settings.awayRecap)), about(SETTING_HELP.awayRecap)),
+        row('r-after', name('Away after', !settings.awayRecap), stepper('away-down', 'away-up', `${settings.awayMinutes}m`, () => setOption($, 'awayMinutes', stepAwayMinutes(settings.awayMinutes, -1)), () => setOption($, 'awayMinutes', stepAwayMinutes(settings.awayMinutes, 1)), !settings.awayRecap), about(SETTING_HELP.awayMinutes)),
+        row('r-style', name('Recap style', !settings.awayRecap), <Button key="set-recap-style" label={settings.recapStyle === 'pane' ? 'Pane' : 'Band'} dimColor={!settings.awayRecap} onPress={() => setOption($, 'recapStyle', settings.recapStyle === 'pane' ? 'band' : 'pane')} />, about(SETTING_HELP.recapStyle)),
+      ],
+      status: [
+        row('r-cache', name('Cache in status line'), toggle('set-cache', settings.cacheMeter, () => setCacheMeter($, !settings.cacheMeter)), about(SETTING_HELP.cacheMeter)),
+      ],
+    }
+    const tabInputs: Record<SettingsTab, JSX.Element[]> =
+      Input === undefined
+        ? { display: [], music: [], recap: [], status: [] }
+        : {
+            display: [<Input key="set-label" label={`  ${'Button label'.padEnd(labelWidth)}`} placeholder={DEFAULT_LABEL} value={settings.buttonLabel} submitLabel="save" onSubmit={value => setOption($, 'buttonLabel', value)} />],
+            music: [<Input key="set-music-file" label={`  ${'Music file'.padEnd(labelWidth)}`} placeholder="built-in tracks" value={settings.musicFile} submitLabel="save" onSubmit={value => setOption($, 'musicFile', value)} />],
+            recap: [],
+            status: [],
+          }
+
     const settingsRow = isSettingsOpen ? (
       <Box key="settings" flexDirection="column">
         <Box flexDirection="row" flexWrap="wrap">
-          <Button
-            key="set-hide"
-            label={`Hide tool rows: ${settings.hideToolRows ? 'ON' : 'OFF'}`}
-            dimColor={!settings.hideToolRows}
-            onPress={() => setOption($, 'hideToolRows', !settings.hideToolRows)}
-          />
-          <Text> </Text>
-          <Button
-            key="set-naming"
-            label={`Job naming: ${settings.jobNaming ? 'ON' : 'OFF'}`}
-            dimColor={!settings.jobNaming}
-            onPress={() => setOption($, 'jobNaming', !settings.jobNaming)}
-          />
-          <Text> </Text>
-          <Button
-            key="set-cyber"
-            label={`Cyberpunk: ${settings.cyberpunk ? 'ON' : 'OFF'}`}
-            dimColor={!settings.cyberpunk}
-            onPress={() => setOption($, 'cyberpunk', !settings.cyberpunk)}
-          />
-          <Text> </Text>
-          <Button
-            key="set-music"
-            label={`Music: ${settings.music ? 'ON' : 'OFF'}${settings.cyberpunk ? '' : ' (Cyberpunk only)'}`}
-            dimColor={!settings.music || !settings.cyberpunk}
-            onPress={() => setOption($, 'music', !settings.music)}
-          />
-          <Text> </Text>
-          <Button
-            key="vol-down"
-            label="−"
-            onPress={() => setOption($, 'musicVolume', clampVolume(settings.musicVolume - VOLUME_STEP))}
-          />
-          <Text>{` Volume ${settings.musicVolume}% `}</Text>
-          <Button
-            key="vol-up"
-            label="+"
-            onPress={() => setOption($, 'musicVolume', clampVolume(settings.musicVolume + VOLUME_STEP))}
-          />
-          <Text> </Text>
-          <Button
-            key="set-track"
-            label={`♪ Track: ${trackName(settings.track)}`}
-            dimColor={settings.musicFile !== ''}
-            onPress={() => setOption($, 'track', nextTrack(settings.track))}
-          />
-          <Text> </Text>
-          <Button
-            key="set-away"
-            label={`Away recap: ${settings.awayRecap ? 'ON' : 'OFF'}`}
-            dimColor={!settings.awayRecap}
-            onPress={() => setOption($, 'awayRecap', !settings.awayRecap)}
-          />
-          <Text> </Text>
-          <Button
-            key="away-down"
-            label="−"
-            dimColor={!settings.awayRecap}
-            onPress={() => setOption($, 'awayMinutes', stepAwayMinutes(settings.awayMinutes, -1))}
-          />
-          <Text dimColor={!settings.awayRecap}>{` Away after ${settings.awayMinutes}m `}</Text>
-          <Button
-            key="away-up"
-            label="+"
-            dimColor={!settings.awayRecap}
-            onPress={() => setOption($, 'awayMinutes', stepAwayMinutes(settings.awayMinutes, 1))}
-          />
-          <Text> </Text>
-          <Button
-            key="set-recap-style"
-            label={`Recap: ${settings.recapStyle === 'pane' ? 'Pane' : 'Band'}`}
-            dimColor={!settings.awayRecap}
-            onPress={() => setOption($, 'recapStyle', settings.recapStyle === 'pane' ? 'band' : 'pane')}
-          />
-          <Text> </Text>
-          <Button
-            key="set-cache"
-            label={`Cache in status line: ${settings.cacheMeter ? 'ON' : 'OFF'}`}
-            dimColor={!settings.cacheMeter}
-            onPress={() => setCacheMeter($, !settings.cacheMeter)}
-          />
+          <Text bold color={theme.title ?? theme.accent}>{`${theme.gear} ${theme.shout('Settings')}  `}</Text>
+          {SETTINGS_TABS.map((t, i) => (
+            <Box key={`tab-box-${t.id}`} flexDirection="row">
+              <Button
+                key={`tab-${t.id}`}
+                label={`${i + 1} ${t.name}`}
+                hotkey={String(i + 1)}
+                variant={tab === t.id ? 'primary' : undefined}
+                dimColor={tab !== t.id}
+                onPress={() => update($, settingsTabAtom, () => t.id)}
+              />
+              <Text> </Text>
+            </Box>
+          ))}
+          <Text>{'  '}</Text>
+          <Button key="set-reset" label="Reset" dimColor onPress={() => resetSettings($)} />
         </Box>
-        {Input === undefined ? null : (
-          <Input
-            key="set-label"
-            label="Button label: "
-            placeholder={DEFAULT_LABEL}
-            value={settings.buttonLabel}
-            submitLabel="save"
-            onSubmit={value => setOption($, 'buttonLabel', value)}
-          />
-        )}
-        {Input === undefined ? null : (
-          <Input
-            key="set-music-file"
-            label="Music file: "
-            placeholder="built-in synth loop"
-            value={settings.musicFile}
-            submitLabel="save"
-            onSubmit={value => setOption($, 'musicFile', value)}
-          />
+        <Text dimColor color={settings.cyberpunk ? theme.title : undefined}>
+          {(settings.cyberpunk ? '┄' : '─').repeat(Math.min(columns, 80))}
+        </Text>
+        {tabRows[tab]}
+        {tabInputs[tab]}
+        {hint === null ? null : (
+          <Text key="settings-hint" dimColor italic wrap="truncate">{`  ↳ ${hint}`}</Text>
         )}
       </Box>
     ) : null
 
-    // Rows the open settings row takes: its buttons wrap across the band, then two text fields.
-    const settingsRows = isSettingsOpen ? Math.ceil(260 / columns) + (Input === undefined ? 0 : 2) : 0
+    // Rows the open settings panel takes: tabs, a rule, the tab's rows and fields, and the hint.
+    const settingsRows = isSettingsOpen ? 2 + tabRows[tab].length + tabInputs[tab].length + (hint === null ? 0 : 1) : 0
 
     if (recap !== null && recap.isShowing) {
       const awayFor = theme.duration(now - recap.awaySince)

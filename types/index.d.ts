@@ -55,6 +55,9 @@ export type CalmSettings = {
   recapStyle: 'band' | 'pane'
 }
 
+/** The settings panel's tabs. */
+export type SettingsTab = 'display' | 'music' | 'recap' | 'status'
+
 /** What the "Welcome back" card shows about the last job. */
 export type AwayRecap = {
   jobId: number
@@ -85,6 +88,10 @@ declare module 'claude-code' {
       settings: CalmSettings
       isSettingsOpen: boolean
       recap: AwayRecap | null
+      /** The settings panel's open tab. */
+      settingsTab: SettingsTab
+      /** One line on the setting changed last, shown under the panel. */
+      settingsHint: string | null
     }
   }
 }

@@ -33,12 +33,26 @@ Your choice is remembered after a restart. When Calm Mode is off, every hidden r
 
 ## Settings
 
-Click the **⚙** next to the on/off button to open the settings row:
+Click the **⚙** next to the on/off button. The panel shows one tab at a time; click a tab or press **1** to **4** while the band has focus:
 
 ```
-[ Hide tool rows: ON ] [ Job naming: ON ] [ Cyberpunk: OFF ]
-Button label: Calm Mode
+⚙ Settings  [1 Display] [2 Music] [3 Recap] [4 Status line]   [ Reset ]
+────────────────────────────────────────────────────────────────────────
+  Hide tool rows      [ ◉ On ]   Hide tool calls while Claude works
+  Job naming          [ ◉ On ]   Haiku gives each job a short name
+  Cyberpunk           [ ○ Off ]  Neon pink and cyan look
+  Button label        Calm Mode
+  ↳ Cyberpunk: Off. Neon pink and cyan look.
 ```
+
+Every switch reads `◉ On` or `○ Off`, each row says what it does, and the dim `↳` line explains the setting you changed last. Settings that do nothing right now are dimmed (music without Cyberpunk, the away time with the recap off). **Reset** puts every setting back to its default, except the status line, which you turn on and off yourself because it edits your settings file.
+
+| Tab | Settings |
+|---|---|
+| Display | Hide tool rows, Job naming, Cyberpunk, Button label |
+| Music | Music, Volume, Track, Music file |
+| Recap | Away recap, Away after, Recap style |
+| Status line | Cache in status line |
 
 | Setting | Default | What it does |
 |---|---|---|
