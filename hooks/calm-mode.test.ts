@@ -549,3 +549,18 @@ test('the cyberpunk Welcome back card has a double neon frame', { options: { cyb
   expect(frame?.props.borderColor).toBe('#ff2bd6')
   await ui.unmount()
 })
+
+test('sections of the Welcome back card are split by thin rules', async ($, on) => {
+  on('session.messages', () => ({
+    value: [
+      { role: 'user', text: 'make the pricing cards blue', toolUses: [] },
+      { role: 'assistant', text: 'Done.', toolUses: [] },
+    ],
+  }) as never)
+  const clock = await start($, on)
+  await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: 600 } as never)
+  await clock.advance(600)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect((await ui.findAll({ type: 'Text', text: /^─{20,}$/ })).length).toBe(2)
+  await ui.unmount()
+})

@@ -1454,6 +1454,12 @@ export function registerCalmMode(on: On, options?: unknown): void {
         ))
       })
       const asked = recap.lastAsked === '' ? [] : wrapText(`“${recap.lastAsked}”`, textWidth)
+      // Thin rules between the sections, in the rows the blank spacers took, so the card is no taller.
+      const divider = (
+        <Text dimColor color={settings.cyberpunk ? theme.title : undefined}>
+          {(settings.cyberpunk ? '┄' : '─').repeat(innerWidth)}
+        </Text>
+      )
       return (
         <Box flexDirection="column" width={columns} key={`recap-${recapTick}`}>
           <Box
@@ -1474,14 +1480,14 @@ export function registerCalmMode(on: On, options?: unknown): void {
             <Text wrap="truncate" color={recap.isResumed ? (recap.isCacheCold ? theme.warn : theme.accent) : recap.phase === 'done' ? theme.done : theme.warn}>
               {statusLine}
             </Text>
-            <Text> </Text>
+            {divider}
             <Text bold dimColor={!settings.cyberpunk} color={settings.cyberpunk ? theme.accent : undefined}>
               {theme.shout(recap.isResumed ? 'Where you left off' : 'What Claude did')}
             </Text>
             {bullets}
             {asked.length === 0 ? null : (
               <Box flexDirection="column">
-                <Text> </Text>
+                {divider}
                 <Text bold dimColor={!settings.cyberpunk} color={settings.cyberpunk ? theme.accent : undefined}>
                   {theme.shout('You last asked')}
                 </Text>
