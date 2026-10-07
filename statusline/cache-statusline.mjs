@@ -86,18 +86,26 @@ function hitText(usage) {
   return { text: `${percent}%`, color: percent >= 70 ? '32' : percent >= 30 ? '33' : '31' };
 }
 
-/** "54m left", "45s left": how long until the cached prefix goes cold. */
-function timeLeft(expiresAtSeconds, nowMs) {
-  const seconds = Math.floor(expiresAtSeconds - nowMs / 1000);
-  if (seconds <= 0) return undefined;
-  if (seconds < 60) return `${seconds}s left`;
-  const minutes = Math.floor(seconds / 60);
-  return minutes < 60 ? `${minutes}m left` : `${Math.floor(minutes / 60)}h ${minutes % 60}m left`;
+const BAR_CELLS = 10;
+const TTL_SECONDS = { '5m': 300, '1h': 3600 };
+
+/**
+ * "▰▰▰▰▰▰▰▰▱▱": the share of the cache's lifetime still left, full right after a request and empty when it goes
+ * cold. Green over half, yellow over a fifth, red below. Undefined once expired.
+ */
+export function lifetimeBar(expiresAtSeconds, ttl, nowMs) {
+  const left = expiresAtSeconds - nowMs / 1000;
+  if (left <= 0) return undefined;
+  const lifetime = TTL_SECONDS[ttl] ?? Math.max(left, 300);
+  const share = Math.min(1, left / lifetime);
+  const filled = Math.max(1, Math.ceil(share * BAR_CELLS));
+  const color = share > 0.5 ? '32' : share > 0.2 ? '33' : '31';
+  return paint(color, '▰'.repeat(filled)) + paint('90', '▱'.repeat(BAR_CELLS - filled));
 }
 
 /**
- * "⚡ cache 87% · 54m left": the newest request's hit rate, colored green at 70% and up, yellow from 30%, red below,
- * then the time until the cache goes cold, red under 5 minutes. "❄ cache cold" once it has expired.
+ * "⚡ cache 87% ▰▰▰▰▰▰▰▰▱▱": the newest request's hit rate, colored green at 70% and up, yellow from 30%, red below,
+ * then a bar of the cache's lifetime left. "❄ cache cold" once it has expired.
  */
 export function cacheSegment(usage, promptCache, nowMs) {
   if (promptCache && promptCache.caching_observed && promptCache.warm === false) {
@@ -105,12 +113,11 @@ export function cacheSegment(usage, promptCache, nowMs) {
   }
   const hit = usage ? hitText(usage) : undefined;
   const expiresAt = typeof promptCache?.expires_at === 'number' ? promptCache.expires_at : undefined;
-  const left = expiresAt === undefined ? undefined : timeLeft(expiresAt, nowMs);
-  if (expiresAt !== undefined && left === undefined) return paint('90', '❄ cache cold');
-  if (!hit && !left) return '';
-  const parts = [hit ? paint(hit.color, `⚡ cache ${hit.text}`) : paint('32', '⚡ cache')];
-  if (left) parts.push(paint(expiresAt - nowMs / 1000 < 300 ? '31' : '90', left));
-  return parts.join(paint('90', ' · '));
+  const bar = expiresAt === undefined ? undefined : lifetimeBar(expiresAt, promptCache?.ttl, nowMs);
+  if (expiresAt !== undefined && bar === undefined) return paint('90', '❄ cache cold');
+  if (!hit && !bar) return '';
+  const label = hit ? paint(hit.color, `⚡ cache ${hit.text}`) : paint('32', '⚡ cache');
+  return bar ? `${label} ${bar}` : label;
 }
 
 let segment = '';
