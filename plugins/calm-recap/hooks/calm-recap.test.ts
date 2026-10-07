@@ -42,7 +42,7 @@ async function finishTurn($: Engine, reason: 'answer' | 'aborted' = 'answer') {
   await $.turn.complete({ answer: ANSWER, durationMs: 90_000, isAborted: reason === 'aborted', turnId: 't1', reason } as never)
 }
 
-test('helpers: points, wrapping, away steps and the cloud label', () => {
+test('helpers: points, wrapping, away steps and the leaf label', () => {
   expect(fallbackPoints(ANSWER)).toEqual(['Made the pricing cards blue.', 'The footer still needs your logo.'])
   expect(parsePoints('- One\n- Two\n- Three\n- Four')).toEqual(['One', 'Two', 'Three'])
   expect(wrapText('one two three four five', 9)).toEqual(['one two', 'three', 'four five'])
@@ -50,7 +50,7 @@ test('helpers: points, wrapping, away steps and the cloud label', () => {
   expect(stepAwayMinutes(1, -1)).toBe(1)
   const settings = { buttonLabel: 'Calm Recap', cyberpunk: false, awayMinutes: 5, recapStyle: 'band', cacheMeter: false } as const
   expect(toggleLabel(settings, true)).toBe('● Calm Recap: ON')
-  expect(toggleLabel({ ...settings, cyberpunk: true }, false)).toBe('☁ CALM RECAP//OFF')
+  expect(toggleLabel({ ...settings, cyberpunk: true }, false)).toBe('🍃 CALM RECAP//OFF')
 })
 
 test('the band holds only its buttons until there is something to recap', async ($, on) => {
@@ -204,14 +204,14 @@ test('the status-line switch runs the installer', async ($, on) => {
   await ui.unmount()
 })
 
-test('cyberpunk: cloud button, neon dashed rules', { options: { cyberpunk: true } }, async ($, on) => {
+test('cyberpunk: leaf button, neon dashed rules', { options: { cyberpunk: true } }, async ($, on) => {
   await start($, on, [
     { role: 'user', text: 'make the pricing cards blue' },
     { role: 'assistant', text: ANSWER },
   ])
   await $.command.run({ command: 'recap', args: '' } as never)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect((await ui.find({ key: 'recap-toggle' }))?.props.label).toBe('☁ CALM RECAP//ON')
+  expect((await ui.find({ key: 'recap-toggle' }))?.props.label).toBe('🍃 CALM RECAP//ON')
   const rules = await ui.findAll({ type: 'Text', text: /^┄{20,}$/ })
   expect(rules.length).toBe(3)
   expect(rules[0]?.props.color).toBe('#ff2bd6')

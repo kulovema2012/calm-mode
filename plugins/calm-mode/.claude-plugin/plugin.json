@@ -1,6 +1,6 @@
 {
   "name": "calm-mode",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "description": "Calm Mode: hides tool calls and shows one friendly checklist above the prompt while Claude works.",
   "author": { "name": "Newk" },
   "types": "./types/index.d.ts",
@@ -77,7 +77,7 @@
       "type": "boolean",
       "title": "Weather",
       "description": "Show the temperature and a weather symbol beside the gear, e.g. \"⛅ 31°C\". Your city is looked up from your internet address (ipwho.is) once a day; the reading comes from Open-Meteo every 15 minutes.",
-      "default": false
+      "default": true
     },
     "cacheMeter": {
       "type": "boolean",

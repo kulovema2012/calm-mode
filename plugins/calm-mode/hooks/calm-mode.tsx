@@ -419,7 +419,7 @@ export const DEFAULT_SETTINGS: CalmSettings = {
   awayMinutes: 5,
   cacheMeter: false,
   recapStyle: 'band',
-  weather: false,
+  weather: true,
 }
 
 export const settingsAtom = atom({ plugin: 'calm-mode', key: 'settings' } as const, DEFAULT_SETTINGS)
@@ -981,8 +981,8 @@ async function setCacheMeter($: Engine, isOn: boolean) {
 
 // ── Weather ─────────────────────────────────────────────────────────────────
 // "⛅ 31°C" beside the gear. The city comes from the computer's internet address (ipwho.is, looked up once a
-// day), the reading from Open-Meteo every 15 minutes; neither needs an account. Off until the person turns it on,
-// because the lookup sends their internet address to that service.
+// day), the reading from Open-Meteo every 15 minutes; neither needs an account. On by default; the lookup sends
+// the computer's internet address to ipwho.is, which the README says, and the switch turns it off.
 
 const WEATHER_EVERY_MS = 15 * 60_000
 const LOCATION_FOR_MS = 24 * 60 * 60_000

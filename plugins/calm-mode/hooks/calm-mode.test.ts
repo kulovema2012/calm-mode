@@ -773,7 +773,7 @@ function fakeWeather(on: Parameters<typeof start>[1], calls: string[]) {
   })
 }
 
-test('weather stays off, with no requests, until it is turned on', async ($, on) => {
+test('turned off, the weather makes no requests and shows nothing', { options: { weather: false } }, async ($, on) => {
   const calls: string[] = []
   fakeWeather(on, calls)
   await start($, on)
@@ -783,7 +783,7 @@ test('weather stays off, with no requests, until it is turned on', async ($, on)
   await ui.unmount()
 })
 
-test('turned on, the weather shows beside the gear and refreshes every 15 minutes', { options: { weather: true } }, async ($, on) => {
+test('by default the weather shows beside the gear and refreshes every 15 minutes', async ($, on) => {
   const calls: string[] = []
   fakeWeather(on, calls)
   const clock = await start($, on)
@@ -804,7 +804,7 @@ test('the weather switch lives in the Display tab', async ($, on) => {
   await start($, on)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   await ui.press({ key: 'calm-settings' })
-  expect((await ui.find({ key: 'set-weather' }))?.props.label).toBe('○ Off')
-  expect(await ui.find({ type: 'Text', text: /internet address/ })).toBeDefined()
+  expect((await ui.find({ key: 'set-weather' }))?.props.label).toBe('◉ On')
+  expect(await ui.find({ type: 'Text', text: /Temperature now, by your city/ })).toBeDefined()
   await ui.unmount()
 })

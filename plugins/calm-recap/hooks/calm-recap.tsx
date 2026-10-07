@@ -63,10 +63,10 @@ export function normalizeSettings(options: unknown): RecapSettings {
   }
 }
 
-/** The on/off button's text: "● Calm Recap: ON", or "☁ CALM RECAP//ON" in cyberpunk. */
+/** The on/off button's text: "● Calm Recap: ON", or "🍃 CALM RECAP//ON" in cyberpunk. */
 export function toggleLabel(settings: RecapSettings, isEnabled: boolean): string {
   return settings.cyberpunk
-    ? `☁ ${settings.buttonLabel.toUpperCase()}//${isEnabled ? 'ON' : 'OFF'}`
+    ? `🍃 ${settings.buttonLabel.toUpperCase()}//${isEnabled ? 'ON' : 'OFF'}`
     : `${isEnabled ? '●' : '○'} ${settings.buttonLabel}: ${isEnabled ? 'ON' : 'OFF'}`
 }
 

@@ -55,7 +55,7 @@ Click **⚙** beside the on/off button. One tab at a time; click a tab or press 
 
 | Tab | Settings |
 |---|---|
-| Display | Cyberpunk (neon look, ☁ button), Button label |
+| Display | Cyberpunk (neon look, 🍃 button), Button label |
 | Recap | Away after (1 to 120 minutes), Recap style (Band or Pane) |
 | Status line | Cache in status line |
 
