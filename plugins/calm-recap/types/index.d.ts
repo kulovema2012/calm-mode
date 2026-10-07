@@ -57,8 +57,6 @@ declare module 'claude-code' {
       settingsTab: RecapTab
       /** One line on the setting changed last, shown under the panel. */
       settingsHint: string | null
-      /** The Button label as it is being typed, for the live preview; null when nothing is being typed. */
-      labelDraft: string | null
       recap: Recap | null
       /** Bumped once a minute while the card shows, so "away 18m" stays current. */
       tick: number

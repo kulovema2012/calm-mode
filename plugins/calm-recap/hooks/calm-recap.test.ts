@@ -322,13 +322,3 @@ test('the Status line tab has a Keep warm switch', async ($, on) => {
   expect((await ui.find({ key: 'set-keepwarm' }))?.props.label).toBe('○')
   await ui.unmount()
 })
-
-test('the Button label field shows a live preview of the button', { options: { cyberpunk: true } }, async ($, on) => {
-  await start($, on)
-  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  await ui.press({ key: 'recap-settings' })
-  expect(await ui.find({ type: 'Text', text: /Preview +\[ 🍃 CALM RECAP ⏻ \]/ })).toBeDefined()
-  await ui.input({ key: 'set-label', text: 'Zen', kind: 'change' })
-  expect(await ui.find({ type: 'Text', text: /Preview +\[ 🍃 ZEN ⏻ \]/ })).toBeDefined()
-  await ui.unmount()
-})
