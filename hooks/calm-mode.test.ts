@@ -2,12 +2,14 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { clampVolume, cleanName, fallbackSummary, musicCommand, nextTrack, trackName, windowsMusicScript } from './calm-mode'
+import { clampVolume, cleanName, mayPlay, fallbackSummary, musicCommand, nextTrack, trackName, windowsMusicScript } from './calm-mode'
 
 /** argv of every player the plugin started in the current test. */
 let spawned: string[][] = []
 /** Every status-line write the plugin made in the current test. */
 let statuses: unknown[] = []
+/** Every toast the plugin raised in the current test. */
+let toasts: string[] = []
 
 const PLAN_TOOL = 'mcp__calm-mode__plan_steps'
 const PROGRESS_TOOL = 'mcp__calm-mode__report_progress'
@@ -29,6 +31,7 @@ const BAND = {
 async function start($: Engine, on: On, onModelCall: () => void = () => undefined) {
   spawned = []
   statuses = []
+  toasts = []
   mock.store(on)
   on('process.spawn', async function* (_$, e) {
     spawned.push([...e.argv])
@@ -47,7 +50,10 @@ async function start($: Engine, on: On, onModelCall: () => void = () => undefine
   on('command.run', () => ({ text: '' }))
   on('tool.register', (_$, e) => ({ value: { tool: `mcp__calm-mode__${e.name}` } }) as never)
   on('command.register', (_$, e) => ({ value: { command: e.name } }) as never)
-  on('ui.toast', () => ({ value: undefined }) as never)
+  on('ui.toast', (_$, e) => {
+    toasts.push(JSON.stringify(e))
+    return { value: undefined } as never
+  })
   on('classic.Notification', () => ({}) as never)
   on('ui.status', (_$, e) => {
     statuses.push(e)
@@ -409,4 +415,54 @@ test('no Welcome back card with the away recap off', { options: { awayRecap: fal
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await ui.find({ type: 'Text', text: /Welcome back/ })).toBeUndefined()
   await ui.unmount()
+})
+
+// ── One shared player across sessions (v0.8.0) ─────────────────────────────
+
+/** An in-memory ~/.claude for the lock file, as another session would leave it. Keyed by file name, because the
+ * engine normalizes paths (on Windows a drive letter is added) before the fs hooks see them. */
+function fakeHome(on: Parameters<typeof start>[1], files: Map<string, string>, sessionId: string) {
+  const name = (e: unknown) => String((e as { path: string }).path).split(/[\\/]/).pop() ?? ''
+  on('env.get', (_$, e) => ({ value: e.name === 'HOME' ? '/home/me' : undefined }) as never)
+  on('session.id', () => ({ value: sessionId }) as never)
+  on('fs.exists', (_$, e) => ({ value: files.has(name(e)) }) as never)
+  on('fs.read', (_$, e) => ({ value: files.get(name(e)) ?? '' }) as never)
+  on('fs.write', (_$, e) => {
+    files.set(name(e), (e as unknown as { text: string }).text)
+    return { value: undefined } as never
+  })
+}
+
+const LOCK = 'calm-mode-music.json'
+
+test('lock rules: free, own, stale and busy', () => {
+  expect(mayPlay(null, 'me', 10_000)).toBe(true)
+  expect(mayPlay({ owner: null, heartbeat: 0 }, 'me', 10_000)).toBe(true)
+  expect(mayPlay({ owner: 'me', heartbeat: 9_000 }, 'me', 10_000)).toBe(true)
+  expect(mayPlay({ owner: 'other', heartbeat: 9_000 }, 'me', 10_000)).toBe(false)
+  expect(mayPlay({ owner: 'other', heartbeat: 0 }, 'me', 10_000)).toBe(true)
+})
+
+test('a session stays quiet while another session holds the player', { options: { cyberpunk: true } }, async ($, on) => {
+  const files = new Map([[LOCK, JSON.stringify({ owner: 'other-session', heartbeat: 1_000_000 })]])
+  fakeHome(on, files, 'this-session')
+  await start($, on)
+  expect(spawned.length).toBe(0)
+})
+
+test('a session takes the player over when the other session went quiet', { options: { cyberpunk: true } }, async ($, on) => {
+  const files = new Map([[LOCK, JSON.stringify({ owner: 'other-session', heartbeat: 1_000 })]])
+  fakeHome(on, files, 'this-session')
+  await start($, on)
+  expect(spawned.length).toBe(1)
+  expect(JSON.parse(files.get(LOCK) ?? '{}').owner).toBe('this-session')
+})
+
+test('finishing the job hands the player back', { options: { cyberpunk: true } }, async ($, on) => {
+  const files = new Map<string, string>()
+  fakeHome(on, files, 'this-session')
+  await start($, on)
+  expect(JSON.parse(files.get(LOCK) ?? '{}').owner).toBe('this-session')
+  await $.turn.complete(FINISHED as never)
+  expect(JSON.parse(files.get(LOCK) ?? '{}').owner).toBe(null)
 })

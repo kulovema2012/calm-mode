@@ -53,6 +53,10 @@ Button label: Calm Mode
 | Away recap | ON | After a job ends, if you stay quiet for **Away after** minutes (default 5, set in `/config`), the band shows a **Welcome back** card. |
 | Cache in status line | OFF | Adds `⚡ cache 87% ▰▰▰▰▰▰▰▰▱▱ 47m` at the right end of your status line. The button (or `/calm statusline on\|off`) edits your status line for you. |
 
+### Several Claude sessions at once
+
+Only one track plays at a time, whichever sessions are busy. The first busy session takes the player by writing a small lock file, `~/.claude/calm-mode-music.json`, and renews it every 3 seconds; other busy sessions stay quiet. When that session's job ends it hands the player back, and another busy session picks it up within 3 seconds, playing its own track and volume. If a session closes without handing back, the others take over after 9 seconds.
+
 ### Built-in tracks
 
 | Track | Feel |

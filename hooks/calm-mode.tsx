@@ -214,6 +214,8 @@ const runtime: {
   isTurnRunning: boolean
   lastApiError: { kind: string; details: string } | null
   music: { key: string; stop: () => void } | null
+  musicWanted: { key: string; file: string; volume: number; asset: string } | null
+  musicLease: Timer | null
   shuffle: { jobId: number; track: string } | null
   awayTimer: Timer | null
   recapTicker: Timer | null
@@ -226,6 +228,8 @@ const runtime: {
   isTurnRunning: false,
   lastApiError: null,
   music: null,
+  musicWanted: null,
+  musicLease: null,
   shuffle: null,
   awayTimer: null,
   recapTicker: null,
@@ -506,6 +510,90 @@ function pickTrack(choice: TrackChoice, jobId: number): string {
   return runtime.shuffle.track
 }
 
+// One player for every Claude session on this computer: a session that wants
+// music claims ~/.claude/calm-mode-music.json and renews it every few seconds;
+// the others stay quiet and take over once the owner lets go or stops renewing.
+const LEASE_MS = 3000
+const STALE_MS = 9000
+
+type MusicLock = { owner: string | null; heartbeat: number }
+
+async function lockPath($: Engine): Promise<string | undefined> {
+  const home = (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME'))
+  if (home === undefined) {
+    return undefined
+  }
+  const sep = home.includes('\\') ? '\\' : '/'
+  return [home, '.claude', 'calm-mode-music.json'].join(sep)
+}
+
+async function readLock($: Engine, path: string): Promise<MusicLock | null> {
+  if (!(await $.fs.exists(path))) {
+    return null
+  }
+  const parsed: unknown = JSON.parse(String(await $.fs.read(path)))
+  return typeof parsed === 'object' && parsed !== null ? (parsed as MusicLock) : null
+}
+
+/** Whether this session may play: the lock is its own, free, or left stale by a session that went away. */
+export function mayPlay(lock: MusicLock | null, me: string, now: number): boolean {
+  return lock === null || lock.owner === null || lock.owner === me || now - lock.heartbeat > STALE_MS
+}
+
+function ensurePlayer($: Engine, want: NonNullable<typeof runtime.musicWanted>) {
+  if (runtime.music?.key === want.key) {
+    return
+  }
+  runtime.music?.stop()
+  runtime.music = { key: want.key, stop: startMusic($, want.file, want.volume, want.asset) }
+}
+
+function stopPlayer() {
+  runtime.music?.stop()
+  runtime.music = null
+}
+
+/** Claims or renews the shared player, then plays or stays quiet accordingly. */
+async function claimMusic($: Engine) {
+  const want = runtime.musicWanted
+  if (want === null) {
+    return
+  }
+  try {
+    const path = await lockPath($)
+    if (path === undefined) {
+      ensurePlayer($, want)
+      return
+    }
+    const me = await $.session.id()
+    const now = await $.clock.now()
+    if (mayPlay(await readLock($, path), me, now)) {
+      await $.fs.write(path, JSON.stringify({ owner: me, heartbeat: now } satisfies MusicLock))
+      // Two sessions may claim at once; the last write wins and the other backs off.
+      if ((await readLock($, path))?.owner === me) {
+        ensurePlayer($, want)
+        return
+      }
+    }
+    stopPlayer()
+  } catch {
+    // No shared lock on this machine: behave as a single session.
+    ensurePlayer($, want)
+  }
+}
+
+async function releaseMusic($: Engine) {
+  stopPlayer()
+  try {
+    const path = await lockPath($)
+    if (path !== undefined && (await readLock($, path))?.owner === (await $.session.id())) {
+      await $.fs.write(path, JSON.stringify({ owner: null, heartbeat: 0 } satisfies MusicLock))
+    }
+  } catch {
+    // nothing to hand over
+  }
+}
+
 /** Plays while Claude works with Calm Mode, Cyberpunk and Music all on; stops otherwise. */
 async function syncMusic($: Engine) {
   const isEnabled = await read($, enabledAtom)
@@ -514,14 +602,24 @@ async function syncMusic($: Engine) {
   const isWanted = isEnabled && settings.cyberpunk && settings.music && list?.phase === 'working'
   const asset = `sounds/${pickTrack(settings.track, list?.jobId ?? 0)}.wav`
   // The key holds the track, the file and the volume, so changing any restarts the player.
-  const wanted =
-    isWanted && settings.musicVolume > 0 ? `${settings.musicVolume}|${asset}|${settings.musicFile}` : null
-  if ((runtime.music?.key ?? null) === wanted) {
+  const key = `${settings.musicVolume}|${asset}|${settings.musicFile}`
+  if (!isWanted || settings.musicVolume <= 0) {
+    if (runtime.musicWanted !== null) {
+      runtime.musicWanted = null
+      runtime.musicLease?.cancel()
+      runtime.musicLease = null
+      await releaseMusic($)
+    }
     return
   }
-  runtime.music?.stop()
-  runtime.music =
-    wanted === null ? null : { key: wanted, stop: startMusic($, settings.musicFile, settings.musicVolume, asset) }
+  if (runtime.musicWanted?.key === key && runtime.musicLease !== null) {
+    return
+  }
+  runtime.musicWanted = { key, file: settings.musicFile, volume: settings.musicVolume, asset }
+  runtime.musicLease ??= $.clock.every(LEASE_MS, () => {
+    void claimMusic($)
+  })
+  await claimMusic($)
 }
 
 // ── Away recap ──────────────────────────────────────────────────────────────
