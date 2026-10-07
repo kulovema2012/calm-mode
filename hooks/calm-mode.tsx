@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, On, Timer } from 'claude-code'
 
-import type { CalmSettings, Checklist, ChecklistTask, TrackChoice } from '../types'
+import type { AwayRecap, CalmSettings, Checklist, ChecklistTask, TrackChoice } from '../types'
 
 type Engine = EngineInterface
 
@@ -215,6 +215,10 @@ const runtime: {
   lastApiError: { kind: string; details: string } | null
   music: { key: string; stop: () => void } | null
   shuffle: { jobId: number; track: string } | null
+  awayTimer: Timer | null
+  recapTicker: Timer | null
+  lastAsked: string
+  lastAnswer: string
 } = {
   frameTimer: null,
   collapseTimer: null,
@@ -223,6 +227,10 @@ const runtime: {
   lastApiError: null,
   music: null,
   shuffle: null,
+  awayTimer: null,
+  recapTicker: null,
+  lastAsked: '',
+  lastAnswer: '',
 }
 
 /** Runs the 250ms animation clock only while a job is working or waiting on the person. */
@@ -319,6 +327,9 @@ export const DEFAULT_SETTINGS: CalmSettings = {
   musicFile: '',
   musicVolume: 35,
   track: 'neon-drive',
+  awayRecap: true,
+  awayMinutes: 5,
+  cacheMeter: true,
 }
 
 export const settingsAtom = atom({ plugin: 'calm-mode', key: 'settings' } as const, DEFAULT_SETTINGS)
@@ -337,6 +348,12 @@ export function normalizeSettings(options: unknown): CalmSettings {
     cyberpunk: flag('cyberpunk', DEFAULT_SETTINGS.cyberpunk),
     music: flag('music', DEFAULT_SETTINGS.music),
     musicVolume: clampVolume(raw.musicVolume),
+    awayRecap: flag('awayRecap', DEFAULT_SETTINGS.awayRecap),
+    awayMinutes:
+      typeof raw.awayMinutes === 'number' && Number.isFinite(raw.awayMinutes)
+        ? Math.round(Math.min(120, Math.max(1, raw.awayMinutes)))
+        : DEFAULT_SETTINGS.awayMinutes,
+    cacheMeter: flag('cacheMeter', DEFAULT_SETTINGS.cacheMeter),
     track: TRACK_CHOICES.includes(raw.track as TrackChoice) ? (raw.track as TrackChoice) : 'neon-drive',
     musicFile: typeof raw.musicFile === 'string' ? raw.musicFile.trim().replace(/^["']+|["']+$/g, '') : '',
   }
@@ -369,6 +386,9 @@ async function setOption<K extends keyof CalmSettings>($: Engine, field: K, valu
   const next = normalizeSettings({ ...(await read($, settingsAtom)), [field]: value })
   await update($, settingsAtom, () => next)
   await syncMusic($)
+  if (!next.cacheMeter) {
+    $.ui.status(undefined)
+  }
   const rows = await $.config.list().catch(() => [])
   const row = rows.find(r => r.key === `calm-mode.${field}`) ?? rows.find(r => r.key.startsWith('calm-mode') && r.key.endsWith(`.${field}`))
   if (row === undefined) {
@@ -505,6 +525,115 @@ async function syncMusic($: Engine) {
   runtime.music?.stop()
   runtime.music =
     wanted === null ? null : { key: wanted, stop: startMusic($, settings.musicFile, settings.musicVolume, asset) }
+}
+
+// ── Away recap ──────────────────────────────────────────────────────────────
+// When a job ends and the person stays quiet for a while, the band swaps the
+// checklist for a "Welcome back" card: the job, how it ended, a one or two
+// sentence summary, and what they last asked. Typing or "Got it" clears it.
+
+export const recapAtom = atom({ plugin: 'calm-mode', key: 'recap' } as const, null)
+
+/** The person's prompt, first line only, at most 70 characters. */
+export function shortQuote(text: string): string {
+  const line = (text.split('\n')[0] ?? '').replace(/\s+/g, ' ').trim()
+  return line.length > 70 ? `${line.slice(0, 69).trimEnd()}…` : line
+}
+
+/** A free stand-in summary: the start of Claude's answer without code or markdown. */
+export function fallbackSummary(answer: string): string {
+  const plain = answer
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`[^`]*`/g, ' ')
+    .replace(/[#>*_|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (plain === '') {
+    return 'Claude finished without a written reply.'
+  }
+  return plain.length > 160 ? `${plain.slice(0, 159).trimEnd()}…` : plain
+}
+
+async function summarize($: Engine, answer: string): Promise<string | undefined> {
+  if (answer.trim() === '') {
+    return undefined
+  }
+  const reply = await $.model.complete({
+    model: 'haiku',
+    maxTokens: 120,
+    timeoutMs: 20000,
+    system:
+      'Summarize what the assistant just did or said in one or two short, plain sentences for a non-technical person. ' +
+      'Mention anything that needs their action. No code, no file paths, no markdown.',
+    prompt: answer.slice(0, 4000),
+  })
+  return reply.isAnswered ? reply.text.replace(/\s+/g, ' ').trim() : undefined
+}
+
+/** Fires once the person has been quiet for the set minutes after a job. */
+async function showRecap($: Engine) {
+  const settings = await read($, settingsAtom)
+  const list = await read($, checklistAtom)
+  if (!settings.awayRecap || list === null || runtime.isTurnRunning) {
+    return
+  }
+  const now = await $.clock.now()
+  const recap: AwayRecap = {
+    jobId: list.jobId,
+    title: list.title,
+    phase: list.phase,
+    tookMs: (list.finishedAt ?? now) - list.startedAt,
+    stepsDone: list.tasks.filter(task => task.status === 'done').length,
+    stepsTotal: list.tasks.length,
+    summary: fallbackSummary(runtime.lastAnswer),
+    lastAsked: runtime.lastAsked,
+    awaySince: list.finishedAt ?? now - settings.awayMinutes * 60_000,
+    isShowing: true,
+  }
+  await update($, recapAtom, () => recap)
+  // Keep "away 18m" current without animating: one redraw a minute.
+  runtime.recapTicker?.cancel()
+  runtime.recapTicker = $.clock.every(60_000, () => {
+    void update($, tickAtom, n => (n ?? 0) + 1)
+  })
+  const summary = await summarize($, runtime.lastAnswer).catch(() => undefined)
+  if (summary !== undefined && summary !== '') {
+    await update($, recapAtom, current =>
+      current !== null && current.jobId === recap.jobId ? { ...current, summary } : current,
+    )
+  }
+}
+
+async function dismissRecap($: Engine) {
+  runtime.awayTimer?.cancel()
+  runtime.awayTimer = null
+  runtime.recapTicker?.cancel()
+  runtime.recapTicker = null
+  if ((await read($, recapAtom)) !== null) {
+    await update($, recapAtom, () => null)
+  }
+}
+
+// ── Cache meter ─────────────────────────────────────────────────────────────
+
+/**
+ * The status line for one turn: the share of prompt tokens the prompt cache
+ * served. Undefined when the turn read no prompt at all.
+ */
+export function cacheLine(usage: {
+  input_tokens: number
+  cache_read_input_tokens: number
+  cache_creation_input_tokens: number
+}): string | undefined {
+  const read = usage.cache_read_input_tokens
+  const total = usage.input_tokens + read + usage.cache_creation_input_tokens
+  if (total <= 0) {
+    return undefined
+  }
+  if (read === 0 && usage.cache_creation_input_tokens > 0) {
+    return '⚡ cache 0% · warming up'
+  }
+  return `⚡ cache ${Math.round((read / total) * 100)}% hit`
 }
 
 // ── Themes ──────────────────────────────────────────────────────────────────
@@ -644,6 +773,10 @@ export function registerCalmMode(on: On, options?: unknown): void {
     const current = await read($, checklistAtom)
     const wasRunning = runtime.isTurnRunning
     runtime.isTurnRunning = true
+    if (text !== '' && !text.startsWith('/')) {
+      runtime.lastAsked = shortQuote(text)
+      await dismissRecap($)
+    }
     if (text !== '' && !text.startsWith('/') && !wasRunning) {
       const jobId = (current?.jobId ?? 0) + 1
       const startedAt = await $.clock.now()
@@ -840,6 +973,20 @@ export function registerCalmMode(on: On, options?: unknown): void {
       return next(e)
     }
     runtime.isTurnRunning = false
+    runtime.lastAnswer = e.answer
+    const settings = await read($, settingsAtom)
+    if (settings.cacheMeter && e.usage !== undefined) {
+      const line = cacheLine(e.usage)
+      if (line !== undefined) {
+        $.ui.status(line)
+      }
+    }
+    runtime.awayTimer?.cancel()
+    runtime.awayTimer = settings.awayRecap
+      ? $.clock.after(settings.awayMinutes * 60_000, () => {
+          void showRecap($).catch(() => undefined)
+        })
+      : null
     const list = await read($, checklistAtom)
     if (list === null || list.finishedAt !== null) {
       return next(e)
@@ -934,6 +1081,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
     const isEnabled = await read($, enabledAtom)
     const settings = await read($, settingsAtom)
     const isSettingsOpen = await read($, settingsOpenAtom)
+    const recap = isEnabled ? await read($, recapAtom) : null
     const theme = settings.cyberpunk ? CYBERPUNK : CLASSIC
     const list = isEnabled ? await read($, checklistAtom) : null
     const tick = list !== null && (list.phase === 'working' || list.phase === 'needsYou') ? await read($, tickAtom) : 0
@@ -1012,6 +1160,20 @@ export function registerCalmMode(on: On, options?: unknown): void {
             dimColor={settings.musicFile !== ''}
             onPress={() => setOption($, 'track', nextTrack(settings.track))}
           />
+          <Text> </Text>
+          <Button
+            key="set-away"
+            label={`Away recap: ${settings.awayRecap ? 'ON' : 'OFF'}`}
+            dimColor={!settings.awayRecap}
+            onPress={() => setOption($, 'awayRecap', !settings.awayRecap)}
+          />
+          <Text> </Text>
+          <Button
+            key="set-cache"
+            label={`Cache meter: ${settings.cacheMeter ? 'ON' : 'OFF'}`}
+            dimColor={!settings.cacheMeter}
+            onPress={() => setOption($, 'cacheMeter', !settings.cacheMeter)}
+          />
         </Box>
         {Input === undefined ? null : (
           <Input
@@ -1035,6 +1197,42 @@ export function registerCalmMode(on: On, options?: unknown): void {
         )}
       </Box>
     ) : null
+
+    if (recap !== null && recap.isShowing) {
+      const awayFor = theme.duration(now - recap.awaySince)
+      const recapTick = await read($, tickAtom)
+      const icon =
+        recap.phase === 'done' ? theme.icons.done : recap.phase === 'needsYou' ? theme.icons.paused : '■ '
+      const outcome =
+        recap.phase === 'done'
+          ? `took ${theme.duration(recap.tookMs)}`
+          : recap.phase === 'needsYou'
+            ? 'waiting for your reply'
+            : recap.phase === 'stuck'
+              ? 'stuck'
+              : 'stopped'
+      return (
+        <Box flexDirection="column" width={columns} key={`recap-${recapTick}`}>
+          <Box flexDirection="row" justifyContent="space-between" width={columns}>
+            <Box width={headerRoom}>
+              <Text wrap="truncate" bold color={theme.title ?? theme.accent}>
+                {`↩ ${theme.shout('Welcome back')}${theme.sep}away ${awayFor}`}
+              </Text>
+            </Box>
+            {buttons}
+          </Box>
+          <Text wrap="truncate" color={recap.phase === 'done' ? theme.done : theme.warn}>
+            {`${icon}${recap.title}${theme.sep}${outcome}${theme.sep}${recap.stepsDone}/${recap.stepsTotal} steps`}
+          </Text>
+          <Text wrap="wrap">{`Claude said: ${recap.summary}`}</Text>
+          {recap.lastAsked === '' ? null : <Text dimColor wrap="truncate">{`Last you asked: "${recap.lastAsked}"`}</Text>}
+          <Box flexDirection="row" justifyContent="flex-end" width={columns}>
+            <Button key="recap-ok" label="Got it" variant="primary" onPress={() => dismissRecap($)} />
+          </Box>
+          {settingsRow}
+        </Box>
+      )
+    }
 
     if (list === null) {
       return (

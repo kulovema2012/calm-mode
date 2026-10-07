@@ -2,10 +2,12 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { clampVolume, cleanName, musicCommand, nextTrack, trackName, windowsMusicScript } from './calm-mode'
+import { cacheLine, clampVolume, cleanName, fallbackSummary, musicCommand, nextTrack, trackName, windowsMusicScript } from './calm-mode'
 
 /** argv of every player the plugin started in the current test. */
 let spawned: string[][] = []
+/** Every status-line write the plugin made in the current test. */
+let statuses: unknown[] = []
 
 const PLAN_TOOL = 'mcp__calm-mode__plan_steps'
 const PROGRESS_TOOL = 'mcp__calm-mode__report_progress'
@@ -26,6 +28,7 @@ const BAND = {
 /** The world beneath the plugin: store, clock, a quiet model, plain tools. */
 async function start($: Engine, on: On, onModelCall: () => void = () => undefined) {
   spawned = []
+  statuses = []
   mock.store(on)
   on('process.spawn', async function* (_$, e) {
     spawned.push([...e.argv])
@@ -46,6 +49,10 @@ async function start($: Engine, on: On, onModelCall: () => void = () => undefine
   on('command.register', (_$, e) => ({ value: { command: e.name } }) as never)
   on('ui.toast', () => ({ value: undefined }) as never)
   on('classic.Notification', () => ({}) as never)
+  on('ui.status', (_$, e) => {
+    statuses.push(e)
+    return { value: undefined } as never
+  })
   await $.session.start({ cwd: '', surface: 'terminal', isInteractive: true })
   await $.turn.start({ text: 'Build my landing page', turnId: 't1' })
   return clock
@@ -335,5 +342,58 @@ test('the track button shows and steps the track', async ($, on) => {
   expect((await ui.find({ key: 'set-track' }))?.props.label).toBe('♪ Track: Neon Drive')
   await ui.press({ key: 'set-track' })
   expect((await ui.find({ key: 'set-track' }))?.props.label).toBe('♪ Track: Night Rain')
+  await ui.unmount()
+})
+
+// ── Away recap and cache meter (v0.5.0) ────────────────────────────────────
+
+const FINISHED = { answer: 'Added the pricing section. The footer needs your logo.', durationMs: 1000, isAborted: false, turnId: 't1', reason: 'answer' } as const
+
+test('cache line: share of prompt tokens read from cache', () => {
+  expect(cacheLine({ input_tokens: 100, cache_read_input_tokens: 870, cache_creation_input_tokens: 30 })).toBe('⚡ cache 87% hit')
+  expect(cacheLine({ input_tokens: 50, cache_read_input_tokens: 0, cache_creation_input_tokens: 9000 })).toBe('⚡ cache 0% · warming up')
+  expect(cacheLine({ input_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 })).toBeUndefined()
+})
+
+test('the status line shows the cache hit after a turn', async ($, on) => {
+  await start($, on)
+  await $.turn.complete({ ...FINISHED, usage: { model: 'm', input_tokens: 100, output_tokens: 5, cache_read_input_tokens: 900, cache_creation_input_tokens: 0 } } as never)
+  expect(JSON.stringify(statuses)).toContain('⚡ cache 90% hit')
+})
+
+test('no cache line with the meter off', { options: { cacheMeter: false } }, async ($, on) => {
+  await start($, on)
+  await $.turn.complete({ ...FINISHED, usage: { model: 'm', input_tokens: 100, output_tokens: 5, cache_read_input_tokens: 900, cache_creation_input_tokens: 0 } } as never)
+  expect(JSON.stringify(statuses)).not.toContain('cache 90%')
+})
+
+test('fallback summary drops code and markdown', () => {
+  expect(fallbackSummary(['## Done', 'I fixed `src/a.ts`.', '```ts', 'const x = 1', '```', 'All good.'].join(String.fromCharCode(10)))).toBe('Done I fixed . All good.')
+  expect(fallbackSummary('')).toBe('Claude finished without a written reply.')
+})
+
+test('after 5 quiet minutes the band shows a Welcome back card; Got it clears it', async ($, on) => {
+  const clock = await start($, on)
+  await $.tool.call({ tool: PLAN_TOOL, steps: ['Build the page'] } as never)
+  await $.tool.call({ tool: PROGRESS_TOOL, task: 'Build the page', percent: 100 } as never)
+  await $.turn.complete(FINISHED as never)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /WELCOME BACK|Welcome back/ })).toBeUndefined()
+  await clock.advance(5 * 60_000)
+  await ui.redraw()
+  expect(await ui.find({ type: 'Text', text: /Welcome back/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Last you asked: "Build my landing page"/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Claude said:/ })).toBeDefined()
+  await ui.press({ key: 'recap-ok' })
+  expect(await ui.find({ type: 'Text', text: /Welcome back/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('no Welcome back card with the away recap off', { options: { awayRecap: false } }, async ($, on) => {
+  const clock = await start($, on)
+  await $.turn.complete(FINISHED as never)
+  await clock.advance(10 * 60_000)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /Welcome back/ })).toBeUndefined()
   await ui.unmount()
 })

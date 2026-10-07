@@ -1,6 +1,6 @@
 {
   "name": "calm-mode",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Calm Mode: hides tool calls and shows one friendly checklist above the prompt while Claude works.",
   "author": { "name": "Newk" },
   "types": "./types/index.d.ts",
@@ -53,6 +53,24 @@
       "description": "Built-in track to play when no music file is set; shuffle picks a random one each job.",
       "default": "neon-drive",
       "options": ["neon-drive", "night-rain", "hacker-pulse", "chrome-ambient", "shuffle"]
+    },
+    "awayRecap": {
+      "type": "boolean",
+      "title": "Away recap",
+      "description": "After a job, if you have been away for a while, show a Welcome back card with what Claude did and what you last asked.",
+      "default": true
+    },
+    "awayMinutes": {
+      "type": "number",
+      "title": "Away after (minutes)",
+      "description": "Minutes of quiet after a job before the Welcome back card appears (1 to 120).",
+      "default": 5
+    },
+    "cacheMeter": {
+      "type": "boolean",
+      "title": "Cache meter",
+      "description": "Show how much of the last turn's prompt came from the prompt cache, in the status line under the prompt.",
+      "default": true
     }
   }
 }

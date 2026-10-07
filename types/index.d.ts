@@ -45,6 +45,29 @@ export type CalmSettings = {
   musicVolume: number
   /** Which built-in track plays when no music file is set. */
   track: TrackChoice
+  /** Show a "Welcome back" recap after you have been away. */
+  awayRecap: boolean
+  /** Minutes of quiet after a job before the recap shows (1 to 120). */
+  awayMinutes: number
+  /** Show the last turn's prompt-cache hit rate in the status line. */
+  cacheMeter: boolean
+}
+
+/** What the "Welcome back" card shows about the last job. */
+export type AwayRecap = {
+  jobId: number
+  title: string
+  phase: ChecklistPhase
+  tookMs: number
+  stepsDone: number
+  stepsTotal: number
+  /** One or two plain sentences on what Claude said or did. */
+  summary: string
+  /** The person's last prompt, shortened. */
+  lastAsked: string
+  /** When the job ended, which is when "away" started. */
+  awaySince: number
+  isShowing: boolean
 }
 
 declare module 'claude-code' {
@@ -55,6 +78,7 @@ declare module 'claude-code' {
       tick: number
       settings: CalmSettings
       isSettingsOpen: boolean
+      recap: AwayRecap | null
     }
   }
 }
