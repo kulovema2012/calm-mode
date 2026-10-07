@@ -1,6 +1,6 @@
 {
   "name": "calm-mode",
-  "version": "0.11.1",
+  "version": "0.12.0",
   "description": "Calm Mode: hides tool calls and shows one friendly checklist above the prompt while Claude works.",
   "author": { "name": "Newk" },
   "types": "./types/index.d.ts",
@@ -72,6 +72,12 @@
       "description": "Where the Welcome back recap reads: band (above the prompt, fitted to its rows) or pane (a larger panel of its own, with the job's steps).",
       "default": "band",
       "options": ["band", "pane"]
+    },
+    "weather": {
+      "type": "boolean",
+      "title": "Weather",
+      "description": "Show the temperature and a weather symbol beside the gear, e.g. \"⛅ 31°C\". Your city is looked up from your internet address (ipwho.is) once a day; the reading comes from Open-Meteo every 15 minutes.",
+      "default": false
     },
     "cacheMeter": {
       "type": "boolean",

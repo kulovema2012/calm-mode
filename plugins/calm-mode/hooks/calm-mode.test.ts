@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { clampVolume, cleanName, fitChecklist, fitRecap, mayPlay, recapLines, stepAwayMinutes, fallbackPoints, parsePoints, wrapText, musicCommand, nextTrack, trackName, windowsMusicScript } from './calm-mode'
+import { clampVolume, cleanName, fitChecklist, weatherSymbol, weatherText, fitRecap, mayPlay, recapLines, stepAwayMinutes, fallbackPoints, parsePoints, wrapText, musicCommand, nextTrack, trackName, windowsMusicScript } from './calm-mode'
 
 /** argv of every player the plugin started in the current test. */
 let spawned: string[][] = []
@@ -193,7 +193,7 @@ test('pressing a setting button changes it through /config', async ($, on) => {
   expect((await ui.find({ key: 'set-cyber' }))?.props.label).toBe('◉ On')
   expect(await ui.find({ type: 'Text', text: /Cyberpunk: On\. Neon pink and cyan look\./ })).toBeDefined()
   await ui.input({ key: 'set-label', text: 'Zen' })
-  expect((await ui.find({ key: 'calm-toggle' }))?.props.label).toBe('☁ ZEN//ON')
+  expect((await ui.find({ key: 'calm-toggle' }))?.props.label).toBe('🍃 ZEN//ON')
   await ui.unmount()
 })
 
@@ -207,7 +207,7 @@ test('cyberpunk theme draws neon rows', { options: { cyberpunk: true, buttonLabe
     expect(await ui.find({ type: 'Text', text: '▸ ' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '▰▰▰▰▰▰▱▱▱▱' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /◢◤ BUILD MY LANDING PAGE/ })).toBeDefined()
-    expect((await ui.find({ key: 'calm-toggle' }))?.props.label).toBe('☁ NEO//ON')
+    expect((await ui.find({ key: 'calm-toggle' }))?.props.label).toBe('🍃 NEO//ON')
     await ui.unmount()
   }
 })
@@ -746,5 +746,65 @@ test('the job timer starts in the same column as the progress bars', async ($, o
   expect(timer).toBeDefined()
   // the title cell spans the icon (2) and the name cell, so both start the next text at the same column
   expect(String(title?.text).length).toBe(2 + String(name?.text).length)
+  await ui.unmount()
+})
+
+// ── Leaf and weather (v0.12.0) ─────────────────────────────────────────────
+
+test('weather codes become symbols, with night versions of clear skies', () => {
+  expect(weatherSymbol(0, true)).toBe('☀')
+  expect(weatherSymbol(0, false)).toBe('☾')
+  expect(weatherSymbol(2, true)).toBe('⛅')
+  expect(weatherSymbol(3, true)).toBe('☁')
+  expect(weatherSymbol(63, true)).toBe('🌧')
+  expect(weatherSymbol(95, false)).toBe('⛈')
+  expect(weatherText({ symbol: '⛅', tempC: 30.6 })).toBe('⛅ 31°C')
+})
+
+/** ipwho.is and Open-Meteo, answered from memory; counts the requests. */
+function fakeWeather(on: Parameters<typeof start>[1], calls: string[]) {
+  on('http.fetch', (_$, e) => {
+    const url = String((e as unknown as { url: string }).url)
+    calls.push(url)
+    const text = url.includes('ipwho.is')
+      ? JSON.stringify({ success: true, latitude: 13.75, longitude: 100.5, city: 'Bangkok' })
+      : JSON.stringify({ current: { temperature_2m: 30.6, weather_code: 2, is_day: 1 } })
+    return { value: { status: 200, ok: true, headers: {}, text } } as never
+  })
+}
+
+test('weather stays off, with no requests, until it is turned on', async ($, on) => {
+  const calls: string[] = []
+  fakeWeather(on, calls)
+  await start($, on)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /°C/ })).toBeUndefined()
+  expect(calls).toEqual([])
+  await ui.unmount()
+})
+
+test('turned on, the weather shows beside the gear and refreshes every 15 minutes', { options: { weather: true } }, async ($, on) => {
+  const calls: string[] = []
+  fakeWeather(on, calls)
+  const clock = await start($, on)
+  await clock.advance(10)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: '⛅ 31°C  ' })).toBeDefined()
+  expect(calls.filter(url => url.includes('ipwho.is')).length).toBe(1)
+  // finish the job first, so 15 minutes of progress animation do not have to play out
+  await $.turn.complete(FINISHED as never)
+  await clock.advance(15 * 60_000)
+  // the city is kept for a day; only the weather is asked again
+  expect(calls.filter(url => url.includes('ipwho.is')).length).toBe(1)
+  expect(calls.filter(url => url.includes('open-meteo')).length).toBe(2)
+  await ui.unmount()
+})
+
+test('the weather switch lives in the Display tab', async ($, on) => {
+  await start($, on)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await ui.press({ key: 'calm-settings' })
+  expect((await ui.find({ key: 'set-weather' }))?.props.label).toBe('○ Off')
+  expect(await ui.find({ type: 'Text', text: /internet address/ })).toBeDefined()
   await ui.unmount()
 })

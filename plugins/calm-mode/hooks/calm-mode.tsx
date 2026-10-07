@@ -217,6 +217,7 @@ const runtime: {
   music: { key: string; stop: () => void } | null
   musicWanted: { key: string; file: string; volume: number; asset: string } | null
   musicLease: Timer | null
+  weatherTimer: Timer | null
   shuffle: { jobId: number; track: string } | null
   awayTimer: Timer | null
   recapTicker: Timer | null
@@ -231,6 +232,7 @@ const runtime: {
   music: null,
   musicWanted: null,
   musicLease: null,
+  weatherTimer: null,
   shuffle: null,
   awayTimer: null,
   recapTicker: null,
@@ -289,6 +291,7 @@ export const SETTING_HELP: Record<keyof CalmSettings, string> = {
   awayMinutes: 'How long you are quiet before it shows',
   cacheMeter: 'Cache hit and time left, at its right end',
   recapStyle: 'Band above the prompt, or a pane',
+  weather: 'Temperature now, by your city',
 }
 
 const SETTING_NAMES: Record<keyof CalmSettings, string> = {
@@ -304,6 +307,7 @@ const SETTING_NAMES: Record<keyof CalmSettings, string> = {
   awayMinutes: 'Away after',
   cacheMeter: 'Cache in status line',
   recapStyle: 'Recap style',
+  weather: 'Weather',
 }
 
 /** Every switch reads the same way. */
@@ -345,6 +349,7 @@ async function setEnabled($: Engine, isEnabled: boolean) {
   await update($, enabledAtom, () => isEnabled)
   await $.store.set(STORE_KEY, isEnabled)
   await syncMusic($)
+  await syncWeather($)
   $.ui.toast(
     isEnabled ? 'Calm Mode on: technical details are hidden' : 'Calm Mode off: showing everything again',
   )
@@ -414,6 +419,7 @@ export const DEFAULT_SETTINGS: CalmSettings = {
   awayMinutes: 5,
   cacheMeter: false,
   recapStyle: 'band',
+  weather: false,
 }
 
 export const settingsAtom = atom({ plugin: 'calm-mode', key: 'settings' } as const, DEFAULT_SETTINGS)
@@ -439,6 +445,7 @@ export function normalizeSettings(options: unknown): CalmSettings {
         : DEFAULT_SETTINGS.awayMinutes,
     cacheMeter: flag('cacheMeter', DEFAULT_SETTINGS.cacheMeter),
     recapStyle: raw.recapStyle === 'pane' ? 'pane' : 'band',
+    weather: flag('weather', DEFAULT_SETTINGS.weather),
     track: TRACK_CHOICES.includes(raw.track as TrackChoice) ? (raw.track as TrackChoice) : 'neon-drive',
     musicFile: typeof raw.musicFile === 'string' ? raw.musicFile.trim().replace(/^["']+|["']+$/g, '') : '',
   }
@@ -461,10 +468,10 @@ export function stepAwayMinutes(minutes: number, direction: 1 | -1): number {
   return next ?? minutes
 }
 
-/** The on/off button's text: "● Calm Mode: ON", or "☁ CALM MODE//ON" in cyberpunk. */
+/** The on/off button's text: "● Calm Mode: ON", or "🍃 CALM MODE//ON" in cyberpunk. */
 export function toggleLabel(settings: CalmSettings, isEnabled: boolean): string {
   return settings.cyberpunk
-    ? `☁ ${settings.buttonLabel.toUpperCase()}//${isEnabled ? 'ON' : 'OFF'}`
+    ? `🍃 ${settings.buttonLabel.toUpperCase()}//${isEnabled ? 'ON' : 'OFF'}`
     : `${isEnabled ? '●' : '○'} ${settings.buttonLabel}: ${isEnabled ? 'ON' : 'OFF'}`
 }
 
@@ -482,6 +489,7 @@ async function setOption<K extends keyof CalmSettings>($: Engine, field: K, valu
   await update($, settingsAtom, () => next)
   await update($, settingsHintAtom, () => settingHint(field, next[field]))
   await syncMusic($)
+  await syncWeather($)
   const rows = await $.config.list().catch(() => [])
   const row = rows.find(r => r.key === `calm-mode.${field}`) ?? rows.find(r => r.key.startsWith('calm-mode') && r.key.endsWith(`.${field}`))
   if (row === undefined) {
@@ -971,6 +979,90 @@ async function setCacheMeter($: Engine, isOn: boolean) {
   return said
 }
 
+// ── Weather ─────────────────────────────────────────────────────────────────
+// "⛅ 31°C" beside the gear. The city comes from the computer's internet address (ipwho.is, looked up once a
+// day), the reading from Open-Meteo every 15 minutes; neither needs an account. Off until the person turns it on,
+// because the lookup sends their internet address to that service.
+
+const WEATHER_EVERY_MS = 15 * 60_000
+const LOCATION_FOR_MS = 24 * 60 * 60_000
+const LOCATION_KEY = 'weatherLocation'
+
+export const weatherAtom = atom({ plugin: 'calm-mode', key: 'weather' } as const, null)
+
+/** The WMO weather code as one symbol; clear and partly cloudy skies change at night. */
+export function weatherSymbol(code: number, isDay: boolean): string {
+  if (code === 0) return isDay ? '☀' : '☾'
+  if (code === 1 || code === 2) return isDay ? '⛅' : '☁'
+  if (code === 3) return '☁'
+  if (code === 45 || code === 48) return '🌫'
+  if (code >= 51 && code <= 57) return '🌦'
+  if ((code >= 61 && code <= 67) || (code >= 80 && code <= 82)) return '🌧'
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return '❄'
+  if (code >= 95) return '⛈'
+  return '☁'
+}
+
+/** "⛅ 31°C" */
+export const weatherText = (weather: { symbol: string; tempC: number }) => `${weather.symbol} ${Math.round(weather.tempC)}°C`
+
+async function weatherLocation($: Engine): Promise<{ latitude: number; longitude: number; city: string } | undefined> {
+  const now = await $.clock.now()
+  const saved = (await $.store.get(LOCATION_KEY)) as { latitude: number; longitude: number; city: string; at: number } | undefined
+  if (saved !== undefined && now - saved.at < LOCATION_FOR_MS) {
+    return saved
+  }
+  const found = await $.http.fetch('https://ipwho.is/')
+  if (!found.ok) {
+    return saved
+  }
+  const geo = JSON.parse(found.text) as { success?: boolean; latitude?: number; longitude?: number; city?: string }
+  if (geo.success !== true || typeof geo.latitude !== 'number' || typeof geo.longitude !== 'number') {
+    return saved
+  }
+  const location = { latitude: geo.latitude, longitude: geo.longitude, city: geo.city ?? '', at: now }
+  await $.store.set(LOCATION_KEY, location)
+  return location
+}
+
+async function refreshWeather($: Engine) {
+  const location = await weatherLocation($)
+  if (location === undefined) {
+    return
+  }
+  const url =
+    'https://api.open-meteo.com/v1/forecast' +
+    `?latitude=${location.latitude}&longitude=${location.longitude}&current=temperature_2m,weather_code,is_day`
+  const reply = await $.http.fetch(url)
+  if (!reply.ok) {
+    return
+  }
+  const current = (JSON.parse(reply.text) as { current?: { temperature_2m?: number; weather_code?: number; is_day?: number } }).current
+  if (typeof current?.temperature_2m !== 'number' || typeof current.weather_code !== 'number') {
+    return
+  }
+  const weather = {
+    symbol: weatherSymbol(current.weather_code, current.is_day !== 0),
+    tempC: current.temperature_2m,
+    city: location.city,
+  }
+  await update($, weatherAtom, () => weather)
+}
+
+/** Checks the weather every 15 minutes while it is turned on; no timer runs while it is off. */
+async function syncWeather($: Engine) {
+  const isOn = (await read($, enabledAtom)) && (await read($, settingsAtom)).weather
+  if (isOn && runtime.weatherTimer === null) {
+    runtime.weatherTimer = $.clock.every(WEATHER_EVERY_MS, () => {
+      void refreshWeather($).catch(() => undefined)
+    })
+    await refreshWeather($).catch(() => undefined)
+  } else if (!isOn && runtime.weatherTimer !== null) {
+    runtime.weatherTimer.cancel()
+    runtime.weatherTimer = null
+  }
+}
+
 // ── Themes ──────────────────────────────────────────────────────────────────
 
 type Theme = {
@@ -1159,6 +1251,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
     const stored = await $.store.get(STORE_KEY)
     await update($, enabledAtom, () => (typeof stored === 'boolean' ? stored : true))
     await update($, settingsAtom, () => configured)
+    void syncWeather($).catch(() => undefined)
     // Versions before 0.5.1 pinned the meter in the plugin's own status row; take it down.
     $.ui.status(undefined)
     // The button shows what the status line really holds; reading it changes nothing.
@@ -1561,6 +1654,8 @@ export function registerCalmMode(on: On, options?: unknown): void {
     const settings = await read($, settingsAtom)
     const isSettingsOpen = await read($, settingsOpenAtom)
     const recap = isEnabled ? await read($, recapAtom) : null
+    const weather = isEnabled && settings.weather ? await read($, weatherAtom) : null
+    const weatherCell = weather === null ? '' : `${weatherText(weather)}  `
     const theme = settings.cyberpunk ? CYBERPUNK : CLASSIC
     const list = isEnabled ? await read($, checklistAtom) : null
     const tick = list !== null && (list.phase === 'working' || list.phase === 'needsYou') ? await read($, tickAtom) : 0
@@ -1570,6 +1665,11 @@ export function registerCalmMode(on: On, options?: unknown): void {
     const label = toggleLabel(settings, isEnabled)
     const buttons = (
       <Box flexDirection="row">
+        {weatherCell === '' ? null : (
+          <Text dimColor={!settings.cyberpunk} color={settings.cyberpunk ? theme.accent : undefined}>
+            {weatherCell}
+          </Text>
+        )}
         <Button
           key="calm-settings"
           label={theme.gear}
@@ -1587,7 +1687,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
         />
       </Box>
     )
-    const buttonsWidth = theme.gear.length + 1 + label.length + 4
+    const buttonsWidth = weatherCell.length + theme.gear.length + 1 + label.length + 4
     const headerRoom = Math.max(4, columns - buttonsWidth - 1)
 
     // ── Settings: one tab at a time, each row "name · switch · what it does" ──
@@ -1623,6 +1723,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
         row('r-hide', name('Hide tool rows'), toggle('set-hide', settings.hideToolRows, () => setOption($, 'hideToolRows', !settings.hideToolRows)), about(SETTING_HELP.hideToolRows)),
         row('r-naming', name('Job naming'), toggle('set-naming', settings.jobNaming, () => setOption($, 'jobNaming', !settings.jobNaming)), about(SETTING_HELP.jobNaming)),
         row('r-cyber', name('Cyberpunk'), toggle('set-cyber', settings.cyberpunk, () => setOption($, 'cyberpunk', !settings.cyberpunk)), about(SETTING_HELP.cyberpunk)),
+        row('r-weather', name('Weather'), toggle('set-weather', settings.weather, () => setOption($, 'weather', !settings.weather)), about(settings.weather ? SETTING_HELP.weather : 'City found from your internet address')),
       ],
       music: [
         row('r-music', name('Music', !settings.cyberpunk), toggle('set-music', settings.music, () => setOption($, 'music', !settings.music), !settings.cyberpunk), about(settings.cyberpunk ? SETTING_HELP.music : 'Turn Cyberpunk on (Display tab) to hear it')),

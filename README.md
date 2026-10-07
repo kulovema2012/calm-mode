@@ -57,7 +57,7 @@ Every switch reads `◉ On` or `○ Off`, each row says what it does, and the di
 
 | Tab | Settings |
 |---|---|
-| Display | Hide tool rows, Job naming, Cyberpunk, Button label |
+| Display | Hide tool rows, Job naming, Cyberpunk, Weather, Button label |
 | Music | Music, Volume, Track, Music file |
 | Recap | Away recap, Away after, Recap style |
 | Status line | Cache in status line |
@@ -84,6 +84,10 @@ Only one track plays at a time, whichever sessions are busy. The first busy sess
 ### Fitting the screen
 
 Claude Code gives the band at most half the terminal's height. Calm Mode never makes it scroll: a long plan folds its finished steps into one `✓ 5 steps done` row, and then the steps after the current one into `○ …3 more steps`; a long recap drops its rules, then the question you asked, then all but its first point. Plans hold up to 12 steps, with step names up to 60 characters.
+
+### Weather
+
+Turn on **Weather** (Display tab) and the band shows the temperature and a symbol beside ⚙, e.g. `⛅ 31°C` (☀ ☾ ⛅ ☁ 🌫 🌦 🌧 ❄ ⛈). Your city is worked out from your internet address with [ipwho.is](https://ipwho.is), once a day, and the reading comes from [Open-Meteo](https://open-meteo.com) every 15 minutes; neither needs an account. It is off by default because the lookup sends your internet address to ipwho.is.
 
 ### Built-in tracks
 
@@ -138,7 +142,7 @@ Turning it off puts your previous status line back. It follows the same wrapper 
 The same settings appear in `/config` under Calm Mode, and the two always agree.
 
 ```
-◢◤ BUILD MY LANDING PAGE // 01:12           ⚙ [ ☁ CALM MODE//ON ]
+◢◤ BUILD MY LANDING PAGE // 01:12           ⚙ [ 🍃 CALM MODE//ON ]
 ◆ Read your brand notes      ▰▰▰▰▰▰▰▰▰▰  DONE
 ▸ Build the pricing section  ▰▰▰▰▰▰▱▱▱▱  60%
 ◇ Add the contact form       ▱▱▱▱▱▱▱▱▱▱  NEXT

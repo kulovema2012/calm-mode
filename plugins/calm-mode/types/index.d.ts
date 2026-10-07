@@ -53,6 +53,8 @@ export type CalmSettings = {
   cacheMeter: boolean
   /** Where the Welcome back recap reads: in the band above the prompt, or in a pane of its own. */
   recapStyle: 'band' | 'pane'
+  /** Show the weather beside the gear; the city comes from the internet address. */
+  weather: boolean
 }
 
 /** The settings panel's tabs. */
@@ -92,6 +94,8 @@ declare module 'claude-code' {
       settingsTab: SettingsTab
       /** One line on the setting changed last, shown under the panel. */
       settingsHint: string | null
+      /** The latest weather reading, while the weather is turned on. */
+      weather: { symbol: string; tempC: number; city: string } | null
     }
   }
 }
