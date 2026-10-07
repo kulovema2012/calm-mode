@@ -51,7 +51,7 @@ Button label: Calm Mode
 | Track | Neon Drive | `[ ♪ Track: … ]` steps through the built-in tracks, then **Shuffle** (a random track each job). |
 | Music file | (empty) | Full path to your own MP3 or WAV. When set, it plays instead of the built-in track. |
 | Away recap | ON | After a job ends, if you stay quiet for **Away after** minutes (default 5, set in `/config`), the band shows a **Welcome back** card. |
-| Cache in status line | OFF | Adds `⚡ cache 87%` at the right end of your status line. The button (or `/calm statusline on\|off`) edits your status line for you. |
+| Cache in status line | OFF | Adds `⚡ cache 87% · 54m left` at the right end of your status line. The button (or `/calm statusline on\|off`) edits your status line for you. |
 
 ### Built-in tracks
 
@@ -79,10 +79,12 @@ Last you asked: "make the pricing cards blue"
 ### Cache meter in the status line
 
 ```
-🤖 Opus 5.5 | 📁 ~/my-app | ⎇ main | 📊 ctx: 42% | ⚡ cache 87%
+🤖 Opus 5.5 | 📁 ~/my-app | ⎇ main | 📊 ctx: 42% | ⚡ cache 87% · 54m left
 ```
 
 The meter sits at the right end of Claude Code's status line and shows how much of the newest request's prompt was read from the prompt cache, which is cheaper and faster: green at 70% and up, yellow from 30%, red below. `⚡ cache warming up` means the cache was just written and the next request should hit it.
+
+After the hit rate comes the time until the cache goes cold (it turns red under 5 minutes). Every request that reads or writes the cache restarts that clock. Once it runs out the meter shows `❄ cache cold`: your next message re-reads the whole conversation at full price. The installer sets the status line's `refreshInterval` to 30 seconds so the countdown moves while you are idle (only if you had none; turning the meter off removes it again).
 
 A plugin cannot set the status line itself, so turning it on runs `statusline/install.mjs`, which:
 

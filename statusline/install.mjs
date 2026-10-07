@@ -59,28 +59,55 @@ function repairChain(previous) {
 const action = process.argv[2] ?? 'status';
 const settings = readSettings();
 
+// Re-runs the status line this often (seconds) so "54m left" counts down while you are idle. Claude Code also
+// re-runs it on its own the moment the cache expires, so the cold state never waits for this.
+const REFRESH_SECONDS = 30;
+
+function readSidecar() {
+  try {
+    return JSON.parse(fs.readFileSync(SIDECAR, 'utf8')) ?? {};
+  } catch {
+    return {};
+  }
+}
+
 if (action === 'install') {
   fs.mkdirSync(HOOKS, { recursive: true });
   fs.copyFileSync(path.join(HERE, 'cache-statusline.mjs'), SCRIPT);
+  const hasOwnRefresh = typeof settings.statusLine?.refreshInterval === 'number';
   if (isInstalled(settings)) {
+    if (!hasOwnRefresh) {
+      // installs from before the countdown: add the refresh and remember that it is ours to remove
+      fs.writeFileSync(SIDECAR, `${JSON.stringify({ ...readSidecar(), addedRefreshInterval: true }, null, 2)}\n`);
+      writeSettings({ ...settings, statusLine: { ...settings.statusLine, refreshInterval: REFRESH_SECONDS } });
+    }
     console.log('The cache meter is already in your status line (wrapper updated).');
   } else {
     const previous = settings.statusLine?.type === 'command' ? settings.statusLine.command ?? '' : '';
-    fs.writeFileSync(SIDECAR, `${JSON.stringify({ command: previous }, null, 2)}\n`);
-    writeSettings({ ...settings, statusLine: { ...(settings.statusLine ?? {}), type: 'command', command: COMMAND } });
+    fs.writeFileSync(
+      SIDECAR,
+      `${JSON.stringify({ command: previous, addedRefreshInterval: !hasOwnRefresh }, null, 2)}\n`,
+    );
+    writeSettings({
+      ...settings,
+      statusLine: {
+        ...(settings.statusLine ?? {}),
+        type: 'command',
+        command: COMMAND,
+        ...(hasOwnRefresh ? {} : { refreshInterval: REFRESH_SECONDS }),
+      },
+    });
     console.log('Added the cache meter to the right end of your status line.');
   }
 } else if (action === 'uninstall') {
-  let previous = '';
-  try {
-    previous = JSON.parse(fs.readFileSync(SIDECAR, 'utf8'))?.command ?? '';
-  } catch {
-    // no saved command: the cache meter was the whole status line
-  }
+  const sidecar = readSidecar();
+  // no saved command: the cache meter was the whole status line
+  const previous = sidecar.command ?? '';
   if (isInstalled(settings)) {
     const next = { ...settings };
     if (previous) {
       next.statusLine = { ...settings.statusLine, command: previous };
+      if (sidecar.addedRefreshInterval) delete next.statusLine.refreshInterval;
     } else {
       delete next.statusLine;
     }
