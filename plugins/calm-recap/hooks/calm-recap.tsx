@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, On, Timer } from 'claude-code'
 
-import type { Recap, RecapPhase, RecapSettings, RecapTab, KeepWarm } from '../types'
+import type { KeepWarm, LastJob, Recap, RecapPhase, RecapSettings, RecapTab } from '../types'
 
 // Calm Recap: Calm Mode's Welcome back card and cache meter on their own, without the checklist. When Claude has
 // answered and you stay quiet for a while (or you resume the session later), the band above the prompt shows what
@@ -21,6 +21,7 @@ export const DEFAULT_SETTINGS: RecapSettings = {
   recapStyle: 'band',
   cacheMeter: false,
   weather: true,
+  jobNaming: true,
 }
 
 export const enabledAtom = atom({ plugin: 'calm-recap', key: 'isEnabled' } as const, true)
@@ -41,6 +42,7 @@ const runtime: {
   turnStartedAt: number
   lastAsked: string
   lastAnswer: string
+  job: { turnId: string; title: string } | null
 } = {
   awayTimer: null,
   recapTicker: null,
@@ -50,6 +52,7 @@ const runtime: {
   turnStartedAt: 0,
   lastAsked: '',
   lastAnswer: '',
+  job: null,
 }
 
 // ── Settings ────────────────────────────────────────────────────────────────
@@ -68,6 +71,7 @@ export function normalizeSettings(options: unknown): RecapSettings {
     recapStyle: raw.recapStyle === 'pane' ? 'pane' : 'band',
     cacheMeter: typeof raw.cacheMeter === 'boolean' ? raw.cacheMeter : DEFAULT_SETTINGS.cacheMeter,
     weather: typeof raw.weather === 'boolean' ? raw.weather : DEFAULT_SETTINGS.weather,
+    jobNaming: typeof raw.jobNaming === 'boolean' ? raw.jobNaming : DEFAULT_SETTINGS.jobNaming,
   }
 }
 
@@ -103,6 +107,7 @@ export const SETTING_HELP: Record<keyof RecapSettings, string> = {
   recapStyle: 'Band above the prompt, or a pane',
   cacheMeter: 'Cache hit and time left, at its right end',
   weather: 'Temperature now, by your city',
+  jobNaming: 'Haiku gives each job a short name',
 }
 
 const SETTING_NAMES: Record<keyof RecapSettings, string> = {
@@ -112,6 +117,7 @@ const SETTING_NAMES: Record<keyof RecapSettings, string> = {
   recapStyle: 'Recap style',
   cacheMeter: 'Cache in status line',
   weather: 'Weather',
+  jobNaming: 'Job naming',
 }
 
 /** Every switch is an icon: ◉ on, ○ off. */
@@ -318,6 +324,7 @@ export function formatDuration(ms: number): string {
 
 type Theme = {
   done: string
+  success: string
   stopped: string
   gear: string
   sep: string
@@ -331,6 +338,7 @@ type Theme = {
 
 const CLASSIC: Theme = {
   done: '✓ ',
+  success: 'success',
   stopped: '■ ',
   gear: '⚙',
   sep: ' · ',
@@ -345,6 +353,7 @@ const CLASSIC: Theme = {
 /** Neon pink titles, cyan accents, yellow alerts. */
 const CYBERPUNK: Theme = {
   done: '◆ ',
+  success: '#00f0ff',
   stopped: '■ ',
   gear: '⚙',
   sep: ' // ',
@@ -698,6 +707,66 @@ async function syncWeather($: Engine) {
   }
 }
 
+// ── The last job ────────────────────────────────────────────────────────────
+// Calm Recap has no plan, so the "job" is your last message: once Claude answers, the band says how it went,
+// "✓ All done · Make the pricing cards blue · took 1m 30s" (cyberpunk: "◆ ALL DONE // … // took 01:30"). The
+// name is Haiku's 2 to 6 words when Job naming is on, else the start of your message, cleaned of code and paths.
+
+export const lastJobAtom = atom({ plugin: 'calm-recap', key: 'lastJob' } as const, null)
+
+const TITLE_LIMIT = 50
+
+/** Plain words for a job name: no code, paths or file names, a capital first letter, at most 50 characters. */
+export function cleanTitle(raw: string): string {
+  let text = (raw.split('\n')[0] ?? '')
+    .replace(/`[^`]*`/g, ' ')
+    .replace(/\S*[\\/]\S*/g, ' ')
+    .replace(/[\w.-]*\.(?:tsx?|jsx?|mjs|py|json|md|css|html?|ya?ml|sh)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (text.length > TITLE_LIMIT) {
+    const room = text.slice(0, TITLE_LIMIT - 1)
+    const cut = room.lastIndexOf(' ') > 0 ? room.slice(0, room.lastIndexOf(' ')) : room
+    text = `${cut.replace(/[\s,.;:–-]+$/, '')}…`
+  }
+  return text === '' ? 'Your request' : text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+/** "✓ All done · <name> · took 1m 30s", or how the job ended otherwise. */
+export function lastJobLine(job: LastJob, theme: Theme): string {
+  const title = theme.shout(job.title)
+  if (job.phase === 'done') {
+    return `${theme.done}${theme.shout('All done')}${theme.sep}${title}${theme.sep}took ${theme.duration(job.tookMs)}`
+  }
+  if (job.phase === 'stopped') {
+    return `${theme.stopped}${theme.shout('Stopped')}${theme.sep}${title}${theme.sep}you pressed Esc`
+  }
+  return `⚠ ${theme.shout('Ended early')}${theme.sep}${title}`
+}
+
+/** Asks Haiku for a 2 to 6 word name for the job; a newer job makes the answer moot. */
+async function nameJob($: Engine, turnId: string, prompt: string) {
+  const reply = await $.model.complete({
+    model: 'haiku',
+    maxTokens: 30,
+    timeoutMs: 15000,
+    system:
+      'Name the job in the request in 2 to 6 plain English words that start with a verb. ' +
+      'No code, no file names, no quotes, no punctuation at the end. Reply with the name only.',
+    prompt: prompt.slice(0, 2000),
+  })
+  if (!reply.isAnswered) {
+    return
+  }
+  const first = (reply.text.split('\n')[0] ?? '').replace(/^\s*[-•*]\s*/, '').replace(/["'.]+/g, '')
+  const title = cleanTitle(first).split(' ').slice(0, 6).join(' ')
+  if (runtime.job?.turnId !== turnId) {
+    return
+  }
+  runtime.job = { turnId, title }
+  await update($, lastJobAtom, current => (current !== null && current.turnId === turnId ? { ...current, title } : current))
+}
+
 // ── Hooks ───────────────────────────────────────────────────────────────────
 
 export function registerCalmRecap(on: On, options?: unknown): void {
@@ -755,6 +824,14 @@ export function registerCalmRecap(on: On, options?: unknown): void {
       runtime.lastAsked = shortQuote(text)
       runtime.turnStartedAt = await $.clock.now()
       await dismissRecap($)
+      const turnId = e.turnId
+      runtime.job = { turnId, title: cleanTitle(text) }
+      await update($, lastJobAtom, () => null)
+      if ((await read($, settingsAtom)).jobNaming) {
+        $.clock.after(0, () => {
+          void nameJob($, turnId, text).catch(() => undefined)
+        })
+      }
     }
     return next(e)
   })
@@ -768,6 +845,10 @@ export function registerCalmRecap(on: On, options?: unknown): void {
     const phase: RecapPhase = e.reason === 'answer' ? 'done' : e.reason === 'aborted' ? 'stopped' : 'stuck'
     const settings = await read($, settingsAtom)
     const answeredAt = await $.clock.now()
+    const job = runtime.job
+    if (job !== null) {
+      await update($, lastJobAtom, () => ({ turnId: job.turnId, title: job.title, phase, tookMs: e.durationMs }))
+    }
     runtime.awayTimer?.cancel()
     runtime.awayTimer = $.clock.after(settings.awayMinutes * 60_000, () => {
       void showRecap($, { turnId: e.turnId, phase, tookMs: e.durationMs, awaySince: answeredAt }).catch(() => undefined)
@@ -850,6 +931,7 @@ export function registerCalmRecap(on: On, options?: unknown): void {
     const tabRows: Record<RecapTab, JSX.Element[]> = {
       display: [
         row('r-cyber', name('Cyberpunk'), toggle('set-cyber', settings.cyberpunk, () => setOption($, 'cyberpunk', !settings.cyberpunk)), about(SETTING_HELP.cyberpunk)),
+        row('r-naming', name('Job naming'), toggle('set-naming', settings.jobNaming, () => setOption($, 'jobNaming', !settings.jobNaming)), about(SETTING_HELP.jobNaming)),
         row('r-weather', name('Weather'), toggle('set-weather', settings.weather, () => setOption($, 'weather', !settings.weather)), about(settings.weather ? SETTING_HELP.weather : 'City found from your internet address')),
       ],
       recap: [
@@ -966,9 +1048,17 @@ export function registerCalmRecap(on: On, options?: unknown): void {
       )
     }
 
+    const lastJob = isEnabled ? await read($, lastJobAtom) : null
     return (
       <Box flexDirection="column" width={columns}>
-        <Box flexDirection="row" justifyContent="flex-end" width={columns}>
+        <Box flexDirection="row" justifyContent={lastJob === null ? 'flex-end' : 'space-between'} width={columns}>
+          {lastJob === null ? null : (
+            <Box width={headerRoom}>
+              <Text wrap="truncate" color={lastJob.phase === 'done' ? theme.success : theme.warn}>
+                {lastJobLine(lastJob, theme)}
+              </Text>
+            </Box>
+          )}
           {buttons}
         </Box>
         {settingsRow}

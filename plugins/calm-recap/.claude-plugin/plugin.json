@@ -1,6 +1,6 @@
 {
   "name": "calm-recap",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Calm Recap: a Welcome back card when you return to the keyboard, and the prompt cache's hit rate and time left in your status line.",
   "author": {
     "name": "Newk"
@@ -12,6 +12,12 @@
       "title": "Button label",
       "description": "The words on the on/off button, up to 20 characters.",
       "default": "Calm Recap"
+    },
+    "jobNaming": {
+      "type": "boolean",
+      "title": "Job naming",
+      "description": "Ask Haiku for a 2 to 6 word name for each job, shown in the done line after Claude answers. Off uses the start of your message.",
+      "default": true
     },
     "cyberpunk": {
       "type": "boolean",

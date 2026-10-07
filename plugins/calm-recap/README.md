@@ -30,6 +30,7 @@ To add the marketplace first and choose a plugin later, type `/plugin marketplac
 
 ## What it does
 
+- **Done line.** After each answer the band says how it went, e.g. `✓ All done · Make the pricing cards blue · took 1m 30s` (Cyberpunk: `◆ ALL DONE // MAKE THE PRICING CARDS BLUE // took 01:30`), or `■ Stopped` / `⚠ Ended early`. The name is a 2 to 6 word name from Haiku (Job naming, Display tab) or the start of your message.
 - **Welcome back card.** When Claude has answered and you stay quiet for a while (5 minutes by default), the band above the prompt shows how the answer ended, what Claude did in up to three short points written by Haiku (anything waiting on you is highlighted with ➜), and what you last asked. Press **Got it** or type your next message to clear it.
 - **After `claude --resume`** the card appears straight away, rebuilt from the saved conversation, with a warning when the prompt cache has expired.
 - **`/recap`** shows the card any time.
@@ -73,7 +74,7 @@ Click **⚙** beside the on/off button. One tab at a time; click a tab or press 
 
 | Tab | Settings |
 |---|---|
-| Display | Cyberpunk (neon look, 🌃 button; the normal look has 🍃), Weather, Button label |
+| Display | Job naming, Cyberpunk (neon look, 🌃 button; the normal look has 🍃), Weather, Button label |
 | Recap | Away after (1 to 120 minutes), Recap style (Band or Pane) |
 | Status line | Cache in status line, Keep warm |
 

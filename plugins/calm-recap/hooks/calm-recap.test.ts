@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { fallbackPoints, fitRecap, keepWarmDecision, keepWarmUntil, parsePoints, recapLines, stepAwayMinutes, toggleLabel, weatherSymbol, weatherText, wrapText } from './calm-recap'
+import { cleanTitle, fallbackPoints, fitRecap, keepWarmDecision, keepWarmUntil, parsePoints, recapLines, stepAwayMinutes, toggleLabel, weatherSymbol, weatherText, wrapText } from './calm-recap'
 
 const BAND = {
   plugin: 'calm-recap',
@@ -48,7 +48,7 @@ test('helpers: points, wrapping, away steps and the theme icons', () => {
   expect(wrapText('one two three four five', 9)).toEqual(['one two', 'three', 'four five'])
   expect(stepAwayMinutes(5, 1)).toBe(10)
   expect(stepAwayMinutes(1, -1)).toBe(1)
-  const settings = { buttonLabel: 'Calm Recap', cyberpunk: false, awayMinutes: 5, recapStyle: 'band', cacheMeter: false, weather: true } as const
+  const settings = { buttonLabel: 'Calm Recap', cyberpunk: false, awayMinutes: 5, recapStyle: 'band', cacheMeter: false, weather: true, jobNaming: true } as const
   expect(toggleLabel(settings, true)).toBe('🍃 Calm Recap ●')
   expect(toggleLabel({ ...settings, cyberpunk: true }, false)).toBe('🌃 CALM RECAP ⭘')
 })
@@ -320,5 +320,52 @@ test('the Status line tab has a Keep warm switch', async ($, on) => {
   await ui.press({ key: 'recap-settings' })
   await ui.press({ key: 'tab-status' })
   expect((await ui.find({ key: 'set-keepwarm' }))?.props.label).toBe('○')
+  await ui.unmount()
+})
+
+// ── Done line ───────────────────────────────────────────────────────────────
+
+test('job titles are plain words', () => {
+  expect(cleanTitle('fix the menu in `src/nav.tsx` please')).toBe('Fix the menu in please')
+  expect(cleanTitle('')).toBe('Your request')
+  expect(cleanTitle('a'.repeat(30) + ' ' + 'b'.repeat(30)).length <= 50).toBe(true)
+})
+
+test('after an answer the band says All done, with the job name and how long it took', async ($, on) => {
+  const clock = await start($, on)
+  await finishTurn($)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: '✓ All done · Make the pricing cards blue · took 1m 30s' })).toBeDefined()
+  // Haiku's name replaces the stand-in when it arrives
+  await clock.advance(10)
+  await ui.redraw()
+  expect(await ui.find({ type: 'Text', text: /✓ All done · Made the cards blue · took 1m 30s/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('cyberpunk done line: ALL DONE // NAME // took 01:30', { options: { cyberpunk: true, jobNaming: false } }, async ($, on) => {
+  await start($, on)
+  await finishTurn($)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: '◆ ALL DONE // MAKE THE PRICING CARDS BLUE // took 01:30' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a stopped job says so; a new message clears the line while Claude works', async ($, on) => {
+  await start($, on)
+  await finishTurn($, 'aborted')
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /■ Stopped · Make the pricing cards blue · you pressed Esc/ })).toBeDefined()
+  await $.turn.start({ text: 'try again', turnId: 't2' })
+  await ui.redraw()
+  expect(await ui.find({ type: 'Text', text: /Stopped|All done/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('the Job naming switch lives in the Display tab', async ($, on) => {
+  await start($, on)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await ui.press({ key: 'recap-settings' })
+  expect((await ui.find({ key: 'set-naming' }))?.props.label).toBe('◉')
   await ui.unmount()
 })

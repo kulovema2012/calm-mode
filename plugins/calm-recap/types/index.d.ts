@@ -11,6 +11,17 @@ export type RecapSettings = {
   cacheMeter: boolean
   /** Show the weather beside the gear; the city comes from the internet address. */
   weather: boolean
+  /** Ask Haiku for a short name for each job, shown in the done line. */
+  jobNaming: boolean
+}
+
+/** The last job (one message and Claude's answer to it), for the band's done line. */
+export type LastJob = {
+  turnId: string
+  /** A short name: Haiku's, or the start of the message. */
+  title: string
+  phase: RecapPhase
+  tookMs: number
 }
 
 /** How the last answer ended. */
@@ -64,6 +75,8 @@ declare module 'claude-code' {
       weather: { symbol: string; tempC: number; city: string } | null
       /** Keep-warm for this session. */
       keepWarm: KeepWarm | null
+      /** How the last job ended, for the band's done line; null while Claude works. */
+      lastJob: LastJob | null
     }
   }
 }
