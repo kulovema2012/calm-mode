@@ -86,8 +86,8 @@ export type AwayRecap = {
   isCacheCold: boolean
   /** The person's last prompt, shortened. */
   lastAsked: string
-  /** When the job ended, which is when "away" started. */
-  awaySince: number
+  /** When the job ended, which is when "away" started; null when a resumed session cannot tell. */
+  awaySince: number | null
   isShowing: boolean
 }
 
@@ -108,6 +108,8 @@ declare module 'claude-code' {
       weather: { symbol: string; tempC: number; city: string } | null
       /** Keep-warm for this session. */
       keepWarm: KeepWarm | null
+      /** Set once this process has started, to tell a resumed session from a hot reload. */
+      sessionSeen: boolean
     }
   }
 }

@@ -43,6 +43,8 @@ const runtime: {
   lastAsked: string
   lastAnswer: string
   job: { turnId: string; title: string } | null
+  isResumeHandled: boolean
+  hasTurnStarted: boolean
 } = {
   awayTimer: null,
   recapTicker: null,
@@ -53,6 +55,8 @@ const runtime: {
   lastAsked: '',
   lastAnswer: '',
   job: null,
+  isResumeHandled: false,
+  hasTurnStarted: false,
 }
 
 // ── Settings ────────────────────────────────────────────────────────────────
@@ -185,6 +189,8 @@ async function setEnabled($: Engine, isEnabled: boolean) {
 // more than it saves), and stops after 20 pings in a row or at the time you gave. The status-line meter tells it
 // when the cache expires (<session>.json) and shows 🔥 from what it writes back (<session>.keepwarm.json).
 
+/** How long after start a resumed conversation waits for its own SessionStart event before showing the card anyway. */
+const RESUME_FALLBACK_MS = 1500
 const KEEP_WARM_LEAD_MS = 5 * 60_000
 const KEEP_WARM_CHECK_MS = 60_000
 const KEEP_WARM_MAX_PINGS = 20
@@ -192,6 +198,8 @@ const KEEP_WARM_TTL_MS = 60 * 60_000
 const KEEP_WARM_PROMPT = 'Keep-alive check from a plugin, not from the person. Reply with just: ok'
 
 export const keepWarmAtom = atom({ plugin: 'calm-recap', key: 'keepWarm' } as const, null)
+/** Set once this process has started; plugin state lives with the process, so a resumed session starts without it. */
+export const sessionSeenAtom = atom({ plugin: 'calm-recap', key: 'sessionSeen' } as const, false)
 
 type CacheState = { ttl: string | null; expiresAt: number | null; warm: boolean | null }
 
@@ -238,6 +246,47 @@ async function readCacheState($: Engine): Promise<CacheState | null> {
   const file = await cacheStateFile($, '.json')
   if (file === undefined || !(await $.fs.exists(file))) return null
   return JSON.parse(String(await $.fs.read(file))) as CacheState
+}
+
+/**
+ * How long ago the last request went out and whether its prompt cache has expired, from the status line's record
+ * of the cache: it expires one TTL after the last request.
+ */
+export function resumeFromCacheState(
+  state: CacheState | null,
+  now: number,
+): { secondsAway: number | undefined; isCacheCold: boolean } {
+  const ttlMs = state?.ttl === '1h' ? 3_600_000 : state?.ttl === '5m' ? 300_000 : null
+  if (state === null || state.expiresAt === null || ttlMs === null) {
+    return { secondsAway: undefined, isCacheCold: false }
+  }
+  const expiresAt = state.expiresAt * 1000
+  return { secondsAway: Math.max(0, Math.round((now - (expiresAt - ttlMs)) / 1000)), isCacheCold: expiresAt <= now }
+}
+
+/** The Welcome back card for a resumed session, `secondsAway` after Claude last answered (undefined: not known). */
+async function showResumeRecap($: Engine, secondsAway: number | undefined, isCacheCold: boolean) {
+  const now = await $.clock.now()
+  await showRecap($, {
+    turnId: `resume-${now}`,
+    awaySince: secondsAway === undefined ? null : now - secondsAway * 1000,
+    isResumed: true,
+    isCacheCold,
+  })
+}
+
+/**
+ * A resumed session's own SessionStart event can fire before this plugin has loaded (a plugin loaded from a folder
+ * comes up a moment after Claude Code). So on the first start in this process, a conversation that already has a
+ * reply in it is treated as resumed, unless the event did arrive or the person is already typing to Claude.
+ */
+async function resumeFallback($: Engine) {
+  // Typing first means the person is back already.
+  if (runtime.isResumeHandled || runtime.hasTurnStarted) return
+  runtime.isResumeHandled = true
+  const now = await $.clock.now()
+  const { secondsAway, isCacheCold } = resumeFromCacheState(await readCacheState($).catch(() => null), now)
+  await showResumeRecap($, secondsAway, isCacheCold)
 }
 
 async function writeKeepWarm($: Engine, keepWarm: KeepWarm) {
@@ -773,6 +822,15 @@ export function registerCalmRecap(on: On, options?: unknown): void {
   const configured = normalizeSettings(options)
 
   on('session.start', async ($, e, next) => {
+    if (!(await read($, sessionSeenAtom))) {
+      await update($, sessionSeenAtom, () => true)
+      $.clock.after(RESUME_FALLBACK_MS, () => {
+        void resumeFallback($).catch(() => undefined)
+      })
+    } else {
+      // A hot reload: this process already showed whatever it had to.
+      runtime.isResumeHandled = true
+    }
     const stored = await $.store.get(STORE_KEY)
     await update($, enabledAtom, () => (typeof stored === 'boolean' ? stored : true))
     await update($, settingsAtom, () => configured)
@@ -817,6 +875,7 @@ export function registerCalmRecap(on: On, options?: unknown): void {
 
   on('turn.start', async ($, e, next) => {
     runtime.isTurnRunning = true
+    runtime.hasTurnStarted = true
     const text = e.text.trim()
     if (text !== '' && !text.startsWith('/')) {
       // A message of your own resets keep-warm's "20 pings in a row".
@@ -859,17 +918,12 @@ export function registerCalmRecap(on: On, options?: unknown): void {
   // `claude --resume`: the card straight away, rebuilt from the saved conversation.
   on('classic.SessionStart', async ($, e, next) => {
     const started = await next(e)
-    if (e.source === 'resume') {
+    if (e.source === 'resume' && !runtime.isResumeHandled) {
+      runtime.isResumeHandled = true
       $.clock.after(500, () => {
-        void (async () => {
-          const now = await $.clock.now()
-          await showRecap($, {
-            turnId: `resume-${now}`,
-            awaySince: now - (e.seconds_since_last_response ?? 0) * 1000,
-            isResumed: true,
-            isCacheCold: e.prompt_cache_likely_expired === true,
-          })
-        })().catch(() => undefined)
+        void showResumeRecap($, e.seconds_since_last_response, e.prompt_cache_likely_expired === true).catch(
+          () => undefined,
+        )
       })
     }
     return started
@@ -1010,7 +1064,7 @@ export function registerCalmRecap(on: On, options?: unknown): void {
         <Box flexDirection="row" justifyContent="space-between" width={columns}>
           <Box width={headerRoom}>
             <Text wrap="truncate" bold color={theme.title ?? theme.accent}>
-              {`↩ ${theme.shout('Welcome back')}${theme.sep}away ${theme.duration(now - recap.awaySince)}`}
+              {`↩ ${theme.shout('Welcome back')}${recap.awaySince === null ? '' : `${theme.sep}away ${theme.duration(now - recap.awaySince)}`}`}
             </Text>
           </Box>
           {buttons}
@@ -1081,7 +1135,7 @@ export function registerCalmRecap(on: On, options?: unknown): void {
     return (
       <Box flexDirection="column" width={width}>
         <Text bold color={theme.title ?? theme.accent} wrap="truncate">
-          {`↩ ${theme.shout('Welcome back')}${theme.sep}away ${theme.duration(now - recap.awaySince)}`}
+          {`↩ ${theme.shout('Welcome back')}${recap.awaySince === null ? '' : `${theme.sep}away ${theme.duration(now - recap.awaySince)}`}`}
         </Text>
         {recapLines(recap, theme, settings.cyberpunk, width).map((line, i) => (
           <Text key={`pane-line-${i}`} wrap="truncate" color={line.color} bold={line.isBold} dimColor={line.isDim}>

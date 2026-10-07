@@ -37,8 +37,8 @@ export type Recap = {
   points: string[]
   /** The person's last request, shortened. */
   lastAsked: string
-  /** When Claude answered, which is when "away" started. */
-  awaySince: number
+  /** When Claude answered, which is when "away" started; null when a resumed session cannot tell. */
+  awaySince: number | null
   isShowing: boolean
   /** Rebuilt from the saved conversation after `claude --resume`. */
   isResumed: boolean
@@ -77,6 +77,8 @@ declare module 'claude-code' {
       keepWarm: KeepWarm | null
       /** How the last job ended, for the band's done line; null while Claude works. */
       lastJob: LastJob | null
+      /** Set once this process has started, to tell a resumed session from a hot reload. */
+      sessionSeen: boolean
     }
   }
 }

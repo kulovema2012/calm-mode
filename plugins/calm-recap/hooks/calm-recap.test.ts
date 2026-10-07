@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { cleanTitle, fallbackPoints, fitRecap, keepWarmDecision, keepWarmUntil, parsePoints, recapLines, stepAwayMinutes, toggleLabel, weatherSymbol, weatherText, wrapText } from './calm-recap'
+import { cleanTitle, fallbackPoints, fitRecap, keepWarmDecision, keepWarmUntil, parsePoints, resumeFromCacheState, recapLines, stepAwayMinutes, toggleLabel, weatherSymbol, weatherText, wrapText } from './calm-recap'
 
 const BAND = {
   plugin: 'calm-recap',
@@ -367,5 +367,76 @@ test('the Job naming switch lives in the Display tab', async ($, on) => {
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   await ui.press({ key: 'recap-settings' })
   expect((await ui.find({ key: 'set-naming' }))?.props.label).toBe('◉')
+  await ui.unmount()
+})
+
+// ── Resume without its SessionStart event (v0.6.1) ─────────────────────────
+
+const SAVED = [
+  { role: 'user', text: 'make the pricing cards blue' },
+  { role: 'assistant', text: ANSWER },
+]
+
+test('away time and a cold cache are read from the status line record', () => {
+  const now = 10_000_000
+  expect(resumeFromCacheState(null, now)).toEqual({ secondsAway: undefined, isCacheCold: false })
+  expect(resumeFromCacheState({ ttl: '1h', expiresAt: (now - 3_600_000) / 1000, warm: false }, now)).toEqual({
+    secondsAway: 7200,
+    isCacheCold: true,
+  })
+  expect(resumeFromCacheState({ ttl: '1h', expiresAt: (now + 50 * 60_000) / 1000, warm: true }, now)).toEqual({
+    secondsAway: 600,
+    isCacheCold: false,
+  })
+})
+
+test('a resumed conversation shows Welcome back even when its SessionStart event came too early', async ($, on) => {
+  const files = new Map<string, string>()
+  files.set('s1.json', JSON.stringify({ ttl: '1h', expiresAt: (1_000_000 - 3_600_000) / 1000, warm: false }))
+  fakeStateDir(on, files, 's1')
+  const clock = await start($, on, SAVED)
+  await clock.advance(2000)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /Welcome back · away 2h/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /cache expired/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('without a cache record the resumed card leaves out the away time', async ($, on) => {
+  fakeStateDir(on, new Map(), 's1')
+  const clock = await start($, on, SAVED)
+  await clock.advance(2000)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /Welcome back/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /away/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a new conversation shows no resume card', async ($, on) => {
+  fakeStateDir(on, new Map(), 's1')
+  const clock = await start($, on)
+  await clock.advance(2000)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /Welcome back/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('typing right after resuming skips the resume card', async ($, on) => {
+  fakeStateDir(on, new Map(), 's1')
+  const clock = await start($, on, SAVED)
+  await $.turn.start({ text: 'next thing', turnId: 't2' })
+  await clock.advance(2000)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /Welcome back/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('the event and the fallback show one card, with the away time from the event', async ($, on) => {
+  fakeStateDir(on, new Map(), 's1')
+  const clock = await start($, on, SAVED)
+  await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: 1800 } as never)
+  await clock.advance(2000)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect((await ui.findAll({ type: 'Text', text: /Welcome back · away 30m/ })).length).toBe(1)
   await ui.unmount()
 })
