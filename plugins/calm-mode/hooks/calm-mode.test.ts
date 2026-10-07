@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { clampVolume, cleanName, fitChecklist, weatherSymbol, weatherText, fitRecap, mayPlay, recapLines, stepAwayMinutes, fallbackPoints, parsePoints, wrapText, musicCommand, nextTrack, trackName, windowsMusicScript } from './calm-mode'
+import { clampVolume, cleanName, fitChecklist, keepWarmDecision, keepWarmUntil, weatherSymbol, weatherText, fitRecap, mayPlay, recapLines, stepAwayMinutes, fallbackPoints, parsePoints, wrapText, musicCommand, nextTrack, trackName, windowsMusicScript } from './calm-mode'
 
 /** argv of every player the plugin started in the current test. */
 let spawned: string[][] = []
@@ -806,5 +806,96 @@ test('the weather switch lives in the Display tab', async ($, on) => {
   await ui.press({ key: 'calm-settings' })
   expect((await ui.find({ key: 'set-weather' }))?.props.label).toBe('◉ On')
   expect(await ui.find({ type: 'Text', text: /Temperature now, by your city/ })).toBeDefined()
+  await ui.unmount()
+})
+
+// ── Keep warm (v0.13.0) ─────────────────────────────────────────────────────
+
+const FORKED = { value: { isAnswered: true, text: 'ok', usage: { input_tokens: 5, output_tokens: 1, cache_read_input_tokens: 90_000, cache_creation_input_tokens: 0 } } }
+
+test('keep-warm decisions: ping only in the last 5 minutes of a warm 1-hour cache', () => {
+  const now = 1_000_000
+  const at = (minutes: number) => (now + minutes * 60_000) / 1000
+  expect(keepWarmDecision(null, 0, now)).toBe('no-meter')
+  expect(keepWarmDecision({ ttl: '5m', expiresAt: at(3), warm: true }, 0, now)).toBe('short-cache')
+  expect(keepWarmDecision({ ttl: '1h', expiresAt: at(30), warm: true }, 0, now)).toBe('wait')
+  expect(keepWarmDecision({ ttl: '1h', expiresAt: at(4), warm: true }, 0, now)).toBe('ping')
+  expect(keepWarmDecision({ ttl: '1h', expiresAt: at(-1), warm: false }, 0, now)).toBe('cold')
+  // a ping of our own keeps it warm past what Claude Code last reported
+  expect(keepWarmDecision({ ttl: '1h', expiresAt: at(-1), warm: false }, now + 50 * 60_000, now)).toBe('wait')
+})
+
+test('keep-warm durations: on, 3h, 90m, until 18:00', () => {
+  const now = new Date(2026, 9, 8, 14, 0).getTime()
+  expect(keepWarmUntil('on', now)).toBeNull()
+  expect(keepWarmUntil(' 3h', now)).toBe(now + 3 * 3_600_000)
+  expect(keepWarmUntil('90m', now)).toBe(now + 90 * 60_000)
+  expect(keepWarmUntil('until 18:00', now)).toBe(new Date(2026, 9, 8, 18, 0).getTime())
+  expect(keepWarmUntil('until 09:30', now)).toBe(new Date(2026, 9, 9, 9, 30).getTime())
+  expect(keepWarmUntil('soon', now)).toBeUndefined()
+})
+
+test('keep warm pings 5 minutes before the cache expires, never sooner, and records how long it lasts', async ($, on) => {
+  const files = new Map<string, string>([['sess1.json', JSON.stringify({ ttl: '1h', expiresAt: (1_000_000 + 10 * 60_000) / 1000, warm: true })]])
+  fakeHome(on, files, 'sess1')
+  let forks = 0
+  on('model.fork', () => {
+    forks += 1
+    return FORKED as never
+  })
+  const clock = await start($, on)
+  await $.turn.complete(FINISHED as never)
+  const said = await $.command.run({ command: 'calm', args: 'keepwarm on' } as never)
+  expect(said.text).toBe('Keep warm is on (stops after 20 pings in a row).')
+  await clock.advance(4 * 60_000)
+  expect(forks).toBe(0)
+  await clock.advance(2 * 60_000)
+  expect(forks).toBe(1)
+  const kept = JSON.parse(files.get('sess1.keepwarm.json') ?? '{}')
+  expect(kept.isOn).toBe(true)
+  expect(kept.warmUntil > 1_000_000 + 60 * 60_000).toBe(true)
+  await clock.advance(10 * 60_000)
+  expect(forks).toBe(1)
+})
+
+test('keep warm never wakes a cold cache and skips the 5-minute cache', async ($, on) => {
+  const files = new Map<string, string>([['sess1.json', JSON.stringify({ ttl: '1h', expiresAt: 900, warm: false })]])
+  fakeHome(on, files, 'sess1')
+  let forks = 0
+  on('model.fork', () => {
+    forks += 1
+    return FORKED as never
+  })
+  const clock = await start($, on)
+  await $.turn.complete(FINISHED as never)
+  await $.command.run({ command: 'calm', args: 'keepwarm on' } as never)
+  await clock.advance(3 * 60_000)
+  files.set('sess1.json', JSON.stringify({ ttl: '5m', expiresAt: (1_000_000 + 4 * 60_000) / 1000, warm: true }))
+  await clock.advance(3 * 60_000)
+  expect(forks).toBe(0)
+})
+
+test('keep warm stops at the time given, and /calm keepwarm off stops it', async ($, on) => {
+  const files = new Map<string, string>()
+  fakeHome(on, files, 'sess1')
+  const clock = await start($, on)
+  await $.turn.complete(FINISHED as never)
+  await $.command.run({ command: 'calm', args: 'keepwarm 30m' } as never)
+  expect(JSON.parse(files.get('sess1.keepwarm.json') ?? '{}').isOn).toBe(true)
+  await clock.advance(31 * 60_000)
+  expect(JSON.parse(files.get('sess1.keepwarm.json') ?? '{}').isOn).toBe(false)
+  await $.command.run({ command: 'calm', args: 'keepwarm on' } as never)
+  const off = await $.command.run({ command: 'calm', args: 'keepwarm off' } as never)
+  expect(off.text).toBe('Keep warm is off.')
+  expect(JSON.parse(files.get('sess1.keepwarm.json') ?? '{}').isOn).toBe(false)
+})
+
+test('the Status line tab has a Keep warm switch that needs the cache meter', async ($, on) => {
+  await start($, on)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await ui.press({ key: 'calm-settings' })
+  await ui.press({ key: 'tab-status' })
+  expect((await ui.find({ key: 'set-keepwarm' }))?.props.label).toBe('○ Off')
+  expect(await ui.find({ type: 'Text', text: /Needs Cache in status line/ })).toBeDefined()
   await ui.unmount()
 })

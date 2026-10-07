@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, On, Timer } from 'claude-code'
 
-import type { Recap, RecapPhase, RecapSettings, RecapTab } from '../types'
+import type { Recap, RecapPhase, RecapSettings, RecapTab, KeepWarm } from '../types'
 
 // Calm Recap: Calm Mode's Welcome back card and cache meter on their own, without the checklist. When Claude has
 // answered and you stay quiet for a while (or you resume the session later), the band above the prompt shows what
@@ -36,6 +36,8 @@ const runtime: {
   awayTimer: Timer | null
   recapTicker: Timer | null
   weatherTimer: Timer | null
+  keepWarmTimer: Timer | null
+  isTurnRunning: boolean
   turnStartedAt: number
   lastAsked: string
   lastAnswer: string
@@ -43,6 +45,8 @@ const runtime: {
   awayTimer: null,
   recapTicker: null,
   weatherTimer: null,
+  keepWarmTimer: null,
+  isTurnRunning: false,
   turnStartedAt: 0,
   lastAsked: '',
   lastAnswer: '',
@@ -162,6 +166,140 @@ async function setEnabled($: Engine, isEnabled: boolean) {
     await dismissRecap($)
   }
   $.ui.toast(isEnabled ? 'Calm Recap on' : 'Calm Recap off: no recaps until you turn it back on')
+}
+
+// ── Keep warm ───────────────────────────────────────────────────────────────
+// Keeps a 1-hour prompt cache from expiring while you are away: about 5 minutes before it would, one hidden
+// question over this conversation ($.model.fork) reads it from the cache, which restarts the hour. Nothing is
+// added to the chat. It never wakes a cache that has already gone cold, skips 5-minute caches (pinging would cost
+// more than it saves), and stops after 20 pings in a row or at the time you gave. The status-line meter tells it
+// when the cache expires (<session>.json) and shows 🔥 from what it writes back (<session>.keepwarm.json).
+
+const KEEP_WARM_LEAD_MS = 5 * 60_000
+const KEEP_WARM_CHECK_MS = 60_000
+const KEEP_WARM_MAX_PINGS = 20
+const KEEP_WARM_TTL_MS = 60 * 60_000
+const KEEP_WARM_PROMPT = 'Keep-alive check from a plugin, not from the person. Reply with just: ok'
+
+export const keepWarmAtom = atom({ plugin: 'calm-recap', key: 'keepWarm' } as const, null)
+
+type CacheState = { ttl: string | null; expiresAt: number | null; warm: boolean | null }
+
+/** What keep-warm should do now, from the cache's state and its own last ping. */
+export function keepWarmDecision(
+  state: CacheState | null,
+  warmUntil: number,
+  now: number,
+): 'no-meter' | 'short-cache' | 'cold' | 'wait' | 'ping' {
+  if (state === null) return 'no-meter'
+  if (state.ttl !== '1h') return 'short-cache'
+  const expiresAt = Math.max((state.expiresAt ?? 0) * 1000, warmUntil)
+  if (expiresAt <= now) return 'cold'
+  return expiresAt - now > KEEP_WARM_LEAD_MS ? 'wait' : 'ping'
+}
+
+/**
+ * When `/… keepwarm <arg>` should stop: null for "on" (only the 20-ping limit), a time for "3h", "90m" or
+ * "until 18:00" (today, or tomorrow once that has passed), undefined for anything else.
+ */
+export function keepWarmUntil(arg: string, now: number): number | null | undefined {
+  const text = arg.trim().toLowerCase()
+  if (text === '' || text === 'on') return null
+  const span = /^(\d+(?:\.\d+)?)\s*(h|m)$/.exec(text)
+  if (span !== null) return now + Number(span[1]) * (span[2] === 'h' ? 3_600_000 : 60_000)
+  const clock = /^until\s+(\d{1,2}):(\d{2})$/.exec(text)
+  if (clock !== null) {
+    const at = new Date(now)
+    at.setHours(Number(clock[1]), Number(clock[2]), 0, 0)
+    return at.getTime() > now ? at.getTime() : at.getTime() + 24 * 3_600_000
+  }
+  return undefined
+}
+
+async function cacheStateFile($: Engine, suffix: string): Promise<string | undefined> {
+  const home = (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME'))
+  if (home === undefined) return undefined
+  const sep = home.includes('\\') ? '\\' : '/'
+  const id = (await $.session.id()).replace(/[^A-Za-z0-9_-]/g, '')
+  return [home, '.claude', 'calm-cache-state', `${id}${suffix}`].join(sep)
+}
+
+async function readCacheState($: Engine): Promise<CacheState | null> {
+  const file = await cacheStateFile($, '.json')
+  if (file === undefined || !(await $.fs.exists(file))) return null
+  return JSON.parse(String(await $.fs.read(file))) as CacheState
+}
+
+async function writeKeepWarm($: Engine, keepWarm: KeepWarm) {
+  await update($, keepWarmAtom, () => keepWarm)
+  const file = await cacheStateFile($, '.keepwarm.json')
+  if (file !== undefined) {
+    await $.fs.write(file, JSON.stringify({ isOn: keepWarm.isOn, warmUntil: keepWarm.warmUntil })).catch(() => undefined)
+  }
+}
+
+async function keepWarmTick($: Engine) {
+  const keepWarm = await read($, keepWarmAtom)
+  if (keepWarm === null || !keepWarm.isOn) return
+  const now = await $.clock.now()
+  if (keepWarm.until !== null && now >= keepWarm.until) {
+    await stopKeepWarm($, 'Keep warm stopped: the time you gave is up')
+    return
+  }
+  if (runtime.isTurnRunning) return
+  if (keepWarmDecision(await readCacheState($).catch(() => null), keepWarm.warmUntil, now) !== 'ping') return
+  const reply = await $.model.fork({ prompt: KEEP_WARM_PROMPT })
+  // Only a reply served from the cache kept it warm; a miss or "nothing to fork" changes nothing.
+  if (!reply.isAnswered || (reply.usage?.cache_read_input_tokens ?? 0) === 0) return
+  const pings = keepWarm.pings + 1
+  await writeKeepWarm($, { ...keepWarm, pings, warmUntil: now + KEEP_WARM_TTL_MS })
+  if (pings >= KEEP_WARM_MAX_PINGS) {
+    await stopKeepWarm($, `Keep warm stopped after ${KEEP_WARM_MAX_PINGS} pings in a row`)
+  }
+}
+
+function ensureKeepWarmTimer($: Engine) {
+  runtime.keepWarmTimer ??= $.clock.every(KEEP_WARM_CHECK_MS, () => {
+    void keepWarmTick($).catch(() => undefined)
+  })
+}
+
+async function startKeepWarm($: Engine, until: number | null) {
+  const current = await read($, keepWarmAtom)
+  await writeKeepWarm($, { isOn: true, until, pings: 0, warmUntil: current?.warmUntil ?? 0 })
+  ensureKeepWarmTimer($)
+  const state = await readCacheState($).catch(() => null)
+  $.ui.toast(
+    state === null
+      ? 'Keep warm is on. It needs the cache meter in your status line to know when the cache expires.'
+      : state.ttl === '5m'
+        ? 'Keep warm is on, but this session uses the 5-minute cache, so it will not ping.'
+        : 'Keep warm is on: 🔥 in the status line',
+  )
+}
+
+async function stopKeepWarm($: Engine, message: string) {
+  const current = await read($, keepWarmAtom)
+  await writeKeepWarm($, { isOn: false, until: null, pings: 0, warmUntil: current?.warmUntil ?? 0 })
+  runtime.keepWarmTimer?.cancel()
+  runtime.keepWarmTimer = null
+  $.ui.toast(message)
+}
+
+/** `/… keepwarm on|off|3h|90m|until 18:00`, answered as the command's output. */
+async function keepWarmCommand($: Engine, arg: string): Promise<string> {
+  if (arg.trim().toLowerCase() === 'off') {
+    await stopKeepWarm($, 'Keep warm is off')
+    return 'Keep warm is off.'
+  }
+  const until = keepWarmUntil(arg, await $.clock.now())
+  if (until === undefined) {
+    return 'Try: keepwarm on, keepwarm 3h, keepwarm 90m, keepwarm until 18:00, or keepwarm off.'
+  }
+  await startKeepWarm($, until)
+  return until === null
+    ? `Keep warm is on (stops after ${KEEP_WARM_MAX_PINGS} pings in a row).`
+    : `Keep warm is on until ${new Date(until).toTimeString().slice(0, 5)}.`
 }
 
 // ── Themes ──────────────────────────────────────────────────────────────────
@@ -560,6 +698,9 @@ export function registerCalmRecap(on: On, options?: unknown): void {
     await update($, enabledAtom, () => (typeof stored === 'boolean' ? stored : true))
     await update($, settingsAtom, () => configured)
     void syncWeather($).catch(() => undefined)
+    if ((await read($, keepWarmAtom))?.isOn === true) {
+      ensureKeepWarmTimer($)
+    }
     // The button shows what the status line really holds; reading it changes nothing.
     void isCacheMeterInstalled($).then(isInstalled => {
       if (isInstalled !== undefined && isInstalled !== configured.cacheMeter) {
@@ -568,8 +709,8 @@ export function registerCalmRecap(on: On, options?: unknown): void {
     })
     await $.command.register({
       name: 'recap',
-      description: 'Show the Welcome back card now; on|off turns Calm Recap on or off; statusline on|off adds the cache meter',
-      argumentHint: '[on|off] | statusline on|off',
+      description: 'Show the Welcome back card now; on|off turns Calm Recap on or off; statusline on|off adds the cache meter; keepwarm keeps the cache warm',
+      argumentHint: '[on|off] | statusline on|off | keepwarm on|off|3h|until 18:00',
       immediate: true,
     })
     return next(e)
@@ -577,6 +718,9 @@ export function registerCalmRecap(on: On, options?: unknown): void {
 
   on('command.run', { command: 'recap' }, async ($, e) => {
     const arg = e.args.trim().toLowerCase()
+    if (arg === 'keepwarm' || arg.startsWith('keepwarm ')) {
+      return { text: await keepWarmCommand($, arg.slice('keepwarm'.length)) }
+    }
     const statusLine = /^statusline\s+(on|off)$/.exec(arg)
     if (statusLine !== null) {
       return { text: await setCacheMeter($, statusLine[1] === 'on') }
@@ -593,8 +737,11 @@ export function registerCalmRecap(on: On, options?: unknown): void {
   })
 
   on('turn.start', async ($, e, next) => {
+    runtime.isTurnRunning = true
     const text = e.text.trim()
     if (text !== '' && !text.startsWith('/')) {
+      // A message of your own resets keep-warm's "20 pings in a row".
+      await update($, keepWarmAtom, current => (current !== null && current.isOn ? { ...current, pings: 0 } : current))
       runtime.lastAsked = shortQuote(text)
       runtime.turnStartedAt = await $.clock.now()
       await dismissRecap($)
@@ -606,6 +753,7 @@ export function registerCalmRecap(on: On, options?: unknown): void {
     if (e.agentId !== undefined) {
       return next(e)
     }
+    runtime.isTurnRunning = false
     runtime.lastAnswer = e.answer
     const phase: RecapPhase = e.reason === 'answer' ? 'done' : e.reason === 'aborted' ? 'stopped' : 'stuck'
     const settings = await read($, settingsAtom)
@@ -677,6 +825,7 @@ export function registerCalmRecap(on: On, options?: unknown): void {
     // ── Settings: one tab at a time, each row "name · switch · what it does" ──
     const tab = await read($, settingsTabAtom)
     const hint = await read($, settingsHintAtom)
+    const keepWarm = await read($, keepWarmAtom)
     const labelWidth = 22
     const name = (text: string, isOff = false) => <Text dimColor={isOff}>{`  ${text.padEnd(labelWidth)}`}</Text>
     const about = (text: string) => <Text dimColor wrap="truncate">{`  ${text}`}</Text>
@@ -711,7 +860,21 @@ export function registerCalmRecap(on: On, options?: unknown): void {
           about(SETTING_HELP.recapStyle),
         ),
       ],
-      status: [row('r-cache', name('Cache in status line'), toggle('set-cache', settings.cacheMeter, () => setCacheMeter($, !settings.cacheMeter)), about(SETTING_HELP.cacheMeter))],
+      status: [
+        row('r-cache', name('Cache in status line'), toggle('set-cache', settings.cacheMeter, () => setCacheMeter($, !settings.cacheMeter)), about(SETTING_HELP.cacheMeter)),
+        row(
+          'r-keepwarm',
+          name('Keep warm', !settings.cacheMeter),
+          toggle('set-keepwarm', keepWarm?.isOn === true, () =>
+            keepWarm?.isOn === true ? stopKeepWarm($, 'Keep warm is off') : startKeepWarm($, null),
+          ),
+          about(
+            settings.cacheMeter
+              ? `Pings before the 1h cache expires (${keepWarm?.isOn === true ? `${keepWarm.pings}/${KEEP_WARM_MAX_PINGS} pings` : 'this session'}), 🔥`
+              : 'Needs Cache in status line',
+          ),
+        ),
+      ],
     }
     const tabInputs: Record<RecapTab, JSX.Element[]> = {
       display:

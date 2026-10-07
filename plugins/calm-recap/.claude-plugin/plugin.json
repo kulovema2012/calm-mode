@@ -1,6 +1,6 @@
 {
   "name": "calm-recap",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Calm Recap: a Welcome back card when you return to the keyboard, and the prompt cache's hit rate and time left in your status line.",
   "author": { "name": "Newk" },
   "types": "./types/index.d.ts",

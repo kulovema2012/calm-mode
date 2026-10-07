@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { fallbackPoints, fitRecap, parsePoints, recapLines, stepAwayMinutes, toggleLabel, weatherSymbol, weatherText, wrapText } from './calm-recap'
+import { fallbackPoints, fitRecap, keepWarmDecision, keepWarmUntil, parsePoints, recapLines, stepAwayMinutes, toggleLabel, weatherSymbol, weatherText, wrapText } from './calm-recap'
 
 const BAND = {
   plugin: 'calm-recap',
@@ -260,5 +260,63 @@ test('turned off, the weather makes no requests and shows nothing', { options: {
   expect(calls).toEqual([])
   await ui.press({ key: 'recap-settings' })
   expect((await ui.find({ key: 'set-weather' }))?.props.label).toBe('○ Off')
+  await ui.unmount()
+})
+
+// ── Keep warm ───────────────────────────────────────────────────────────────
+
+const FORKED = { value: { isAnswered: true, text: 'ok', usage: { input_tokens: 5, output_tokens: 1, cache_read_input_tokens: 90_000, cache_creation_input_tokens: 0 } } }
+
+/** An in-memory ~/.claude/calm-cache-state, keyed by file name (the engine normalizes the paths it hands hooks). */
+function fakeStateDir(on: On, files: Map<string, string>, sessionId: string) {
+  const name = (e: unknown) => String((e as { path: string }).path).split(/[\\/]/).pop() ?? ''
+  on('env.get', (_$, e) => ({ value: e.name === 'HOME' ? '/home/me' : undefined }) as never)
+  on('session.id', () => ({ value: sessionId }) as never)
+  on('fs.exists', (_$, e) => ({ value: files.has(name(e)) }) as never)
+  on('fs.read', (_$, e) => ({ value: files.get(name(e)) ?? '' }) as never)
+  on('fs.write', (_$, e) => {
+    files.set(name(e), (e as unknown as { text: string }).text)
+    return { value: undefined } as never
+  })
+}
+
+test('keep-warm decisions and durations', () => {
+  const now = 1_000_000
+  const at = (minutes: number) => (now + minutes * 60_000) / 1000
+  expect(keepWarmDecision(null, 0, now)).toBe('no-meter')
+  expect(keepWarmDecision({ ttl: '5m', expiresAt: at(3), warm: true }, 0, now)).toBe('short-cache')
+  expect(keepWarmDecision({ ttl: '1h', expiresAt: at(4), warm: true }, 0, now)).toBe('ping')
+  expect(keepWarmDecision({ ttl: '1h', expiresAt: at(-1), warm: false }, 0, now)).toBe('cold')
+  expect(keepWarmUntil('2h', now)).toBe(now + 2 * 3_600_000)
+  expect(keepWarmUntil('later', now)).toBeUndefined()
+})
+
+test('/recap keepwarm pings 5 minutes before the cache expires', async ($, on) => {
+  const files = new Map<string, string>([['s1.json', JSON.stringify({ ttl: '1h', expiresAt: (1_000_000 + 10 * 60_000) / 1000, warm: true })]])
+  fakeStateDir(on, files, 's1')
+  let forks = 0
+  on('model.fork', () => {
+    forks += 1
+    return FORKED as never
+  })
+  const clock = await start($, on)
+  const said = await $.command.run({ command: 'recap', args: 'keepwarm on' } as never)
+  expect(said.text).toBe('Keep warm is on (stops after 20 pings in a row).')
+  await clock.advance(4 * 60_000)
+  expect(forks).toBe(0)
+  await clock.advance(2 * 60_000)
+  expect(forks).toBe(1)
+  expect(JSON.parse(files.get('s1.keepwarm.json') ?? '{}').isOn).toBe(true)
+  const off = await $.command.run({ command: 'recap', args: 'keepwarm off' } as never)
+  expect(off.text).toBe('Keep warm is off.')
+  expect(JSON.parse(files.get('s1.keepwarm.json') ?? '{}').isOn).toBe(false)
+})
+
+test('the Status line tab has a Keep warm switch', async ($, on) => {
+  await start($, on)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await ui.press({ key: 'recap-settings' })
+  await ui.press({ key: 'tab-status' })
+  expect((await ui.find({ key: 'set-keepwarm' }))?.props.label).toBe('○ Off')
   await ui.unmount()
 })

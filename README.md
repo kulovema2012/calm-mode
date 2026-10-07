@@ -60,7 +60,7 @@ Every switch reads `◉ On` or `○ Off`, each row says what it does, and the di
 | Display | Hide tool rows, Job naming, Cyberpunk, Weather, Button label |
 | Music | Music, Volume, Track, Music file |
 | Recap | Away recap, Away after, Recap style |
-| Status line | Cache in status line |
+| Status line | Cache in status line, Keep warm |
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -138,6 +138,19 @@ A plugin cannot set the status line itself, so turning it on runs the plugin's `
 - backs up `settings.json` to `settings.json.calm-backup` before every change.
 
 Turning it off puts your previous status line back. It follows the same wrapper convention as other status-line wrappers: if another wrapper was later installed around it, removing the meter hands that wrapper your original command, so the chain never breaks.
+
+### Keep warm
+
+Turn on **Keep warm** (Status line tab, or `/calm keepwarm on`) before you step away. About 5 minutes before the 1-hour prompt cache would expire, it asks Claude one hidden question over this conversation, which reads it from the cache and restarts the hour, so your next message does not pay to rebuild everything. Nothing is added to the chat, and the status line shows 🔥 while it is on: `⚡ cache 87% ▰▰▰▰▰▰▰▰▱▱ 47m 🔥`.
+
+| Command | Does |
+|---|---|
+| `/calm keepwarm on` | Keep this session warm (stops after 20 pings in a row) |
+| `/calm keepwarm 3h` / `90m` | Keep it warm for that long |
+| `/calm keepwarm until 18:00` | Keep it warm until then |
+| `/calm keepwarm off` | Stop |
+
+It needs the cache meter in your status line (that is how it knows when the cache expires), only pings a 1-hour cache (on the 5-minute cache pinging would cost more than it saves), never wakes a cache that has already gone cold, and pauses while Claude is working. Each ping re-reads your conversation from the cache: far cheaper than rebuilding it, but it does count toward your plan's usage. The idea comes from [claude-code-cache-keep-warm](https://github.com/andreichiritescu/claude-code-cache-keep-warm) (MIT) by Andrei Chiritescu.
 
 The same settings appear in `/config` under Calm Mode, and the two always agree.
 

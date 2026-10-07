@@ -20,6 +20,10 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SIDECAR = path.join(HERE, 'calm-cache-statusline.json');
+// Shared with the Calm Mode / Calm Recap plugin, one pair of files per session: this script writes
+// <session>.json (when the cache expires, and its lifetime) for the plugin's keep-warm, and reads
+// <session>.keepwarm.json (keep-warm on, and how long its last ping keeps the cache warm) for the 🔥.
+const STATE_DIR = path.join(HERE, '..', 'calm-cache-state');
 // Only the end of the transcript is read: enough for the newest request, cheap on long sessions.
 const TAIL_BYTES = 512 * 1024;
 
@@ -112,20 +116,44 @@ function shortTime(seconds) {
 }
 
 /**
- * "⚡ cache 87% ▰▰▰▰▰▰▰▰▱▱": the newest request's hit rate, colored green at 70% and up, yellow from 30%, red below,
- * then a bar of the cache's lifetime left. "❄ cache cold" once it has expired.
+ * "⚡ cache 87% ▰▰▰▰▰▰▰▰▱▱ 47m 🔥": the newest request's hit rate, colored green at 70% and up, yellow from 30%, red
+ * below, then a bar of the cache's lifetime left, and 🔥 while keep-warm is on. A keep-warm ping refreshes the cache
+ * without Claude Code knowing, so its "warm until" extends the lifetime shown. "❄ cache cold" once it has expired.
  */
-export function cacheSegment(usage, promptCache, nowMs) {
-  if (promptCache && promptCache.caching_observed && promptCache.warm === false) {
-    return paint('90', '❄ cache cold');
+export function cacheSegment(usage, promptCache, nowMs, keepWarm = null) {
+  const warmUntil = typeof keepWarm?.warmUntil === 'number' ? keepWarm.warmUntil / 1000 : 0;
+  const fire = keepWarm?.isOn ? ' 🔥' : '';
+  const isKeptWarm = warmUntil > nowMs / 1000;
+  if (promptCache && promptCache.caching_observed && promptCache.warm === false && !isKeptWarm) {
+    return paint('90', '❄ cache cold') + fire;
   }
   const hit = usage ? hitText(usage) : undefined;
-  const expiresAt = typeof promptCache?.expires_at === 'number' ? promptCache.expires_at : undefined;
+  const reported = typeof promptCache?.expires_at === 'number' ? promptCache.expires_at : undefined;
+  const expiresAt = reported === undefined && !isKeptWarm ? undefined : Math.max(reported ?? 0, warmUntil);
   const bar = expiresAt === undefined ? undefined : lifetimeBar(expiresAt, promptCache?.ttl, nowMs);
-  if (expiresAt !== undefined && bar === undefined) return paint('90', '❄ cache cold');
+  if (expiresAt !== undefined && bar === undefined) return paint('90', '❄ cache cold') + fire;
   if (!hit && !bar) return '';
   const label = hit ? paint(hit.color, `⚡ cache ${hit.text}`) : paint('32', '⚡ cache');
-  return bar ? `${label} ${bar}` : label;
+  return (bar ? `${label} ${bar}` : label) + fire;
+}
+
+const sessionFile = (id, suffix) => path.join(STATE_DIR, `${String(id).replace(/[^A-Za-z0-9_-]/g, '')}${suffix}`);
+
+/** Saves when this session's cache expires, for the plugin's keep-warm to read. */
+function recordCacheState(sessionId, promptCache) {
+  if (!sessionId || !promptCache) return;
+  fs.mkdirSync(STATE_DIR, { recursive: true });
+  const state = { ttl: promptCache.ttl ?? null, expiresAt: promptCache.expires_at ?? null, warm: promptCache.warm ?? null, at: Date.now() };
+  fs.writeFileSync(sessionFile(sessionId, '.json'), JSON.stringify(state));
+}
+
+function readKeepWarm(sessionId) {
+  if (!sessionId) return null;
+  try {
+    return JSON.parse(fs.readFileSync(sessionFile(sessionId, '.keepwarm.json'), 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
 let segment = '';
@@ -135,7 +163,12 @@ try {
   let usage = payload?.context_window?.current_usage ?? null;
   const transcript = payload?.transcript_path;
   if (!usage && transcript && fs.existsSync(transcript)) usage = lastUsage(transcript);
-  segment = cacheSegment(usage, payload?.prompt_cache ?? null, Date.now());
+  try {
+    recordCacheState(payload?.session_id, payload?.prompt_cache);
+  } catch {
+    // keep-warm then simply has nothing to go on
+  }
+  segment = cacheSegment(usage, payload?.prompt_cache ?? null, Date.now(), readKeepWarm(payload?.session_id));
 } catch {
   // the meter must never cost you the status line
 }

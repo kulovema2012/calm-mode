@@ -60,6 +60,16 @@ export type CalmSettings = {
 /** The settings panel's tabs. */
 export type SettingsTab = 'display' | 'music' | 'recap' | 'status'
 
+/** Keep-warm for this session: on or off, when it stops, pings in a row, and how long the last ping keeps the cache. */
+export type KeepWarm = {
+  isOn: boolean
+  /** When to stop (milliseconds), or null to stop only after 20 pings in a row. */
+  until: number | null
+  pings: number
+  /** The cache stays warm until this time (milliseconds) thanks to the last ping. */
+  warmUntil: number
+}
+
 /** What the "Welcome back" card shows about the last job. */
 export type AwayRecap = {
   jobId: number
@@ -96,6 +106,8 @@ declare module 'claude-code' {
       settingsHint: string | null
       /** The latest weather reading, while the weather is turned on. */
       weather: { symbol: string; tempC: number; city: string } | null
+      /** Keep-warm for this session. */
+      keepWarm: KeepWarm | null
     }
   }
 }

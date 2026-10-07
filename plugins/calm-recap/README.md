@@ -35,6 +35,19 @@ Install **Calm Recap or Calm Mode, not both**: both draw the band above the prom
 
 - **Weather** beside ⚙: the temperature and a symbol, e.g. `⛅ 31°C` (☀ ☾ ⛅ ☁ 🌫 🌦 🌧 ❄ ⛈). Your city is worked out from your internet address with [ipwho.is](https://ipwho.is) once a day, and the reading comes from [Open-Meteo](https://open-meteo.com) every 15 minutes. It is on by default. **Privacy:** the lookup sends your internet address to ipwho.is; turn Weather off (Display tab) to stop all weather requests.
 
+### Keep warm
+
+Turn on **Keep warm** (Status line tab, or `/recap keepwarm on`) before you step away. About 5 minutes before the 1-hour prompt cache would expire, it asks Claude one hidden question over this conversation, which reads it from the cache and restarts the hour, so your next message does not pay to rebuild everything. Nothing is added to the chat, and the status line shows 🔥 while it is on: `⚡ cache 87% ▰▰▰▰▰▰▰▰▱▱ 47m 🔥`.
+
+| Command | Does |
+|---|---|
+| `/recap keepwarm on` | Keep this session warm (stops after 20 pings in a row) |
+| `/recap keepwarm 3h` / `90m` | Keep it warm for that long |
+| `/recap keepwarm until 18:00` | Keep it warm until then |
+| `/recap keepwarm off` | Stop |
+
+It needs the cache meter in your status line (that is how it knows when the cache expires), only pings a 1-hour cache (on the 5-minute cache pinging would cost more than it saves), never wakes a cache that has already gone cold, and pauses while Claude is working. Each ping re-reads your conversation from the cache: far cheaper than rebuilding it, but it does count toward your plan's usage. The idea comes from [claude-code-cache-keep-warm](https://github.com/andreichiritescu/claude-code-cache-keep-warm) (MIT) by Andrei Chiritescu.
+
 ## Commands
 
 | Command | Does |
@@ -42,6 +55,7 @@ Install **Calm Recap or Calm Mode, not both**: both draw the band above the prom
 | `/recap` | Show the Welcome back card now |
 | `/recap on` / `/recap off` | Turn Calm Recap on or off (also the button on the band) |
 | `/recap statusline on` / `off` | Add or remove the cache meter in your status line |
+| `/recap keepwarm on` / `3h` / `until 18:00` / `off` | Keep the prompt cache warm while you are away |
 
 ## Settings
 
@@ -59,6 +73,6 @@ Click **⚙** beside the on/off button. One tab at a time; click a tab or press 
 |---|---|
 | Display | Cyberpunk (neon look, 🍃 button), Weather, Button label |
 | Recap | Away after (1 to 120 minutes), Recap style (Band or Pane) |
-| Status line | Cache in status line |
+| Status line | Cache in status line, Keep warm |
 
 The same settings are in `/config` under Calm Recap. **Reset** puts every setting back except the status line.
