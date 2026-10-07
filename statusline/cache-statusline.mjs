@@ -100,7 +100,15 @@ export function lifetimeBar(expiresAtSeconds, ttl, nowMs) {
   const share = Math.min(1, left / lifetime);
   const filled = Math.max(1, Math.ceil(share * BAR_CELLS));
   const color = share > 0.5 ? '32' : share > 0.2 ? '33' : '31';
-  return paint(color, '▰'.repeat(filled)) + paint('90', '▱'.repeat(BAR_CELLS - filled));
+  return `${paint(color, '▰'.repeat(filled))}${paint('90', '▱'.repeat(BAR_CELLS - filled))} ${paint(color, shortTime(left))}`;
+}
+
+/** "54m", "45s", "1h 2m". */
+function shortTime(seconds) {
+  const s = Math.floor(seconds);
+  if (s < 60) return `${s}s`;
+  const minutes = Math.floor(s / 60);
+  return minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
 /**
