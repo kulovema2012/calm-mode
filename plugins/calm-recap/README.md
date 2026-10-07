@@ -3,7 +3,7 @@
 The Welcome back card, the prompt-cache meter and the weather from [Calm Mode](../../README.md), on their own: no checklist, no plan-first rule, no hidden tool rows. Your Claude Code looks exactly as usual until you step away.
 
 ```
-↩ Welcome back · away 18m           ⛅ 31°C  ⚙ [ ● Calm Recap: ON ]
+↩ Welcome back · away 18m           📍 Bangkok ⛅ 31°C  ⚙ [ ● Calm Recap: ON ]
 ────────────────────────────────────────────────────────────────
 ✓ Answered · took 1m 30s
 ────────────────────────────────────────────────────────────────
@@ -33,7 +33,7 @@ Install **Calm Recap or Calm Mode, not both**: both draw the band above the prom
 - **`/recap`** shows the card any time.
 - **Cache meter** in your status line, at its right end: `⚡ cache 87% ▰▰▰▰▰▰▰▰▱▱ 47m`, the share of the last request read from the prompt cache and a bar of the time left before it goes cold. Turn it on with `/recap statusline on` or the switch in the settings panel; it wraps your existing status line and `off` puts it back.
 
-- **Weather** beside ⚙: the temperature and a symbol, e.g. `⛅ 31°C` (☀ ☾ ⛅ ☁ 🌫 🌦 🌧 ❄ ⛈). Your city is worked out from your internet address with [ipwho.is](https://ipwho.is) once a day, and the reading comes from [Open-Meteo](https://open-meteo.com) every 15 minutes. It is on by default. **Privacy:** the lookup sends your internet address to ipwho.is; turn Weather off (Display tab) to stop all weather requests.
+- **Weather** beside ⚙: your city, a symbol and the temperature, e.g. `📍 Bangkok ⛅ 31°C` (☀ ☾ ⛅ ☁ 🌫 🌦 🌧 ❄ ⛈). Your city is worked out from your internet address with [ipwho.is](https://ipwho.is) at most once an hour (so a new network shows within the hour), and the reading comes from [Open-Meteo](https://open-meteo.com) every 15 minutes. It is on by default. **Privacy:** the lookup sends your internet address to ipwho.is; turn Weather off (Display tab) to stop all weather requests.
 
 ### Keep warm
 

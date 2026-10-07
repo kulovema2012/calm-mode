@@ -87,7 +87,7 @@ Claude Code gives the band at most half the terminal's height. Calm Mode never m
 
 ### Weather
 
-With **Weather** on (Display tab), the band shows the temperature and a symbol beside ⚙, e.g. `⛅ 31°C` (☀ ☾ ⛅ ☁ 🌫 🌦 🌧 ❄ ⛈). Your city is worked out from your internet address with [ipwho.is](https://ipwho.is), once a day, and the reading comes from [Open-Meteo](https://open-meteo.com) every 15 minutes; neither needs an account. It is on by default. **Privacy:** the lookup sends your internet address to ipwho.is; turn Weather off to stop all weather requests.
+With **Weather** on (Display tab), the band shows your city, a symbol and the temperature beside ⚙, e.g. `📍 Bangkok ⛅ 31°C` (☀ ☾ ⛅ ☁ 🌫 🌦 🌧 ❄ ⛈). Your city is worked out from your internet address with [ipwho.is](https://ipwho.is), at most once an hour (so a new network shows within the hour), and the reading comes from [Open-Meteo](https://open-meteo.com) every 15 minutes; neither needs an account. It is on by default. **Privacy:** the lookup sends your internet address to ipwho.is; turn Weather off to stop all weather requests.
 
 ### Built-in tracks
 

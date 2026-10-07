@@ -1,6 +1,6 @@
 {
   "name": "calm-recap",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Calm Recap: a Welcome back card when you return to the keyboard, and the prompt cache's hit rate and time left in your status line.",
   "author": { "name": "Newk" },
   "types": "./types/index.d.ts",
@@ -33,7 +33,7 @@
     "weather": {
       "type": "boolean",
       "title": "Weather",
-      "description": "Show the temperature and a weather symbol beside the gear, e.g. \"⛅ 31°C\". Your city is looked up from your internet address (ipwho.is) once a day; the reading comes from Open-Meteo every 15 minutes.",
+      "description": "Show your city, a weather symbol and the temperature beside the gear, e.g. \"📍 Bangkok ⛅ 31°C\". Your city is looked up from your internet address (ipwho.is) at most once an hour; the reading comes from Open-Meteo every 15 minutes.",
       "default": true
     },
     "cacheMeter": {

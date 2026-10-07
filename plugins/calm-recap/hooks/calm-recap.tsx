@@ -606,11 +606,13 @@ async function setCacheMeter($: Engine, isOn: boolean) {
 
 // ── Weather ─────────────────────────────────────────────────────────────────
 // "⛅ 31°C" beside the gear, as in Calm Mode. The city comes from the computer's internet address (ipwho.is,
-// looked up once a day), the reading from Open-Meteo every 15 minutes; neither needs an account. On by default;
+// looked up at most once an hour), the reading from Open-Meteo every 15 minutes; neither needs an account. On by default;
 // the lookup sends the internet address to ipwho.is, which the README says, and the switch turns it off.
 
 const WEATHER_EVERY_MS = 15 * 60_000
-const LOCATION_FOR_MS = 24 * 60 * 60_000
+// Your location follows you: an hour old at most, so a new network (a trip, a café) shows within the hour.
+const LOCATION_FOR_MS = 60 * 60_000
+const CITY_LIMIT = 18
 const LOCATION_KEY = 'weatherLocation'
 
 export const weatherAtom = atom({ plugin: 'calm-recap', key: 'weather' } as const, null)
@@ -628,8 +630,12 @@ export function weatherSymbol(code: number, isDay: boolean): string {
   return '☁'
 }
 
-/** "⛅ 31°C" */
-export const weatherText = (weather: { symbol: string; tempC: number }) => `${weather.symbol} ${Math.round(weather.tempC)}°C`
+/** "📍 Bangkok ⛅ 31°C", or "⛅ 31°C" when the city is unknown; a long city name is shortened. */
+export function weatherText(weather: { symbol: string; tempC: number; city?: string }): string {
+  const city = (weather.city ?? '').trim()
+  const place = city === '' ? '' : `📍 ${city.length > CITY_LIMIT ? `${city.slice(0, CITY_LIMIT - 1)}…` : city} `
+  return `${place}${weather.symbol} ${Math.round(weather.tempC)}°C`
+}
 
 async function weatherLocation($: Engine): Promise<{ latitude: number; longitude: number; city: string } | undefined> {
   const now = await $.clock.now()

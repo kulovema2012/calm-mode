@@ -224,6 +224,8 @@ test('weather codes become symbols', () => {
   expect(weatherSymbol(2, true)).toBe('⛅')
   expect(weatherSymbol(63, true)).toBe('🌧')
   expect(weatherText({ symbol: '⛅', tempC: 30.6 })).toBe('⛅ 31°C')
+  expect(weatherText({ symbol: '☀', tempC: 29, city: 'Bangkok' })).toBe('📍 Bangkok ☀ 29°C')
+  expect(weatherText({ symbol: '☀', tempC: 29, city: 'Llanfairpwllgwyngyll' })).toBe('📍 Llanfairpwllgwyng… ☀ 29°C')
 })
 
 /** ipwho.is and Open-Meteo, answered from memory; counts the requests. */
@@ -244,7 +246,7 @@ test('by default the weather shows beside the gear and refreshes every 15 minute
   const clock = await start($, on)
   await clock.advance(10)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await ui.find({ type: 'Text', text: '⛅ 31°C  ' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '📍 Bangkok ⛅ 31°C  ' })).toBeDefined()
   await clock.advance(15 * 60_000)
   expect(calls.filter(url => url.includes('ipwho.is')).length).toBe(1)
   expect(calls.filter(url => url.includes('open-meteo')).length).toBe(2)
