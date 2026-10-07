@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { fallbackPoints, fitRecap, parsePoints, recapLines, stepAwayMinutes, toggleLabel, wrapText } from './calm-recap'
+import { fallbackPoints, fitRecap, parsePoints, recapLines, stepAwayMinutes, toggleLabel, weatherSymbol, weatherText, wrapText } from './calm-recap'
 
 const BAND = {
   plugin: 'calm-recap',
@@ -48,7 +48,7 @@ test('helpers: points, wrapping, away steps and the leaf label', () => {
   expect(wrapText('one two three four five', 9)).toEqual(['one two', 'three', 'four five'])
   expect(stepAwayMinutes(5, 1)).toBe(10)
   expect(stepAwayMinutes(1, -1)).toBe(1)
-  const settings = { buttonLabel: 'Calm Recap', cyberpunk: false, awayMinutes: 5, recapStyle: 'band', cacheMeter: false } as const
+  const settings = { buttonLabel: 'Calm Recap', cyberpunk: false, awayMinutes: 5, recapStyle: 'band', cacheMeter: false, weather: true } as const
   expect(toggleLabel(settings, true)).toBe('● Calm Recap: ON')
   expect(toggleLabel({ ...settings, cyberpunk: true }, false)).toBe('🍃 CALM RECAP//OFF')
 })
@@ -215,5 +215,50 @@ test('cyberpunk: leaf button, neon dashed rules', { options: { cyberpunk: true }
   const rules = await ui.findAll({ type: 'Text', text: /^┄{20,}$/ })
   expect(rules.length).toBe(3)
   expect(rules[0]?.props.color).toBe('#ff2bd6')
+  await ui.unmount()
+})
+
+test('weather codes become symbols', () => {
+  expect(weatherSymbol(0, true)).toBe('☀')
+  expect(weatherSymbol(0, false)).toBe('☾')
+  expect(weatherSymbol(2, true)).toBe('⛅')
+  expect(weatherSymbol(63, true)).toBe('🌧')
+  expect(weatherText({ symbol: '⛅', tempC: 30.6 })).toBe('⛅ 31°C')
+})
+
+/** ipwho.is and Open-Meteo, answered from memory; counts the requests. */
+function fakeWeather(on: On, calls: string[]) {
+  on('http.fetch', (_$, e) => {
+    const url = String((e as unknown as { url: string }).url)
+    calls.push(url)
+    const text = url.includes('ipwho.is')
+      ? JSON.stringify({ success: true, latitude: 13.75, longitude: 100.5, city: 'Bangkok' })
+      : JSON.stringify({ current: { temperature_2m: 30.6, weather_code: 2, is_day: 1 } })
+    return { value: { status: 200, ok: true, headers: {}, text } } as never
+  })
+}
+
+test('by default the weather shows beside the gear and refreshes every 15 minutes', async ($, on) => {
+  const calls: string[] = []
+  fakeWeather(on, calls)
+  const clock = await start($, on)
+  await clock.advance(10)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: '⛅ 31°C  ' })).toBeDefined()
+  await clock.advance(15 * 60_000)
+  expect(calls.filter(url => url.includes('ipwho.is')).length).toBe(1)
+  expect(calls.filter(url => url.includes('open-meteo')).length).toBe(2)
+  await ui.unmount()
+})
+
+test('turned off, the weather makes no requests and shows nothing', { options: { weather: false } }, async ($, on) => {
+  const calls: string[] = []
+  fakeWeather(on, calls)
+  await start($, on)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /°C/ })).toBeUndefined()
+  expect(calls).toEqual([])
+  await ui.press({ key: 'recap-settings' })
+  expect((await ui.find({ key: 'set-weather' }))?.props.label).toBe('○ Off')
   await ui.unmount()
 })

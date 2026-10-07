@@ -20,6 +20,7 @@ export const DEFAULT_SETTINGS: RecapSettings = {
   awayMinutes: 5,
   recapStyle: 'band',
   cacheMeter: false,
+  weather: true,
 }
 
 export const enabledAtom = atom({ plugin: 'calm-recap', key: 'isEnabled' } as const, true)
@@ -34,12 +35,14 @@ export const tickAtom = atom({ plugin: 'calm-recap', key: 'tick' } as const, 0)
 const runtime: {
   awayTimer: Timer | null
   recapTicker: Timer | null
+  weatherTimer: Timer | null
   turnStartedAt: number
   lastAsked: string
   lastAnswer: string
 } = {
   awayTimer: null,
   recapTicker: null,
+  weatherTimer: null,
   turnStartedAt: 0,
   lastAsked: '',
   lastAnswer: '',
@@ -60,6 +63,7 @@ export function normalizeSettings(options: unknown): RecapSettings {
         : DEFAULT_SETTINGS.awayMinutes,
     recapStyle: raw.recapStyle === 'pane' ? 'pane' : 'band',
     cacheMeter: typeof raw.cacheMeter === 'boolean' ? raw.cacheMeter : DEFAULT_SETTINGS.cacheMeter,
+    weather: typeof raw.weather === 'boolean' ? raw.weather : DEFAULT_SETTINGS.weather,
   }
 }
 
@@ -91,6 +95,7 @@ export const SETTING_HELP: Record<keyof RecapSettings, string> = {
   awayMinutes: 'How long you are quiet before it shows',
   recapStyle: 'Band above the prompt, or a pane',
   cacheMeter: 'Cache hit and time left, at its right end',
+  weather: 'Temperature now, by your city',
 }
 
 const SETTING_NAMES: Record<keyof RecapSettings, string> = {
@@ -99,6 +104,7 @@ const SETTING_NAMES: Record<keyof RecapSettings, string> = {
   awayMinutes: 'Away after',
   recapStyle: 'Recap style',
   cacheMeter: 'Cache in status line',
+  weather: 'Weather',
 }
 
 export const onOff = (isOn: boolean) => (isOn ? '◉ On' : '○ Off')
@@ -124,6 +130,7 @@ async function setOption<K extends keyof RecapSettings>($: Engine, field: K, val
   const next = normalizeSettings({ ...(await read($, settingsAtom)), [field]: value })
   await update($, settingsAtom, () => next)
   await update($, settingsHintAtom, () => settingHint(field, next[field]))
+  await syncWeather($)
   const rows = await $.config.list().catch(() => [])
   const row = rows.find(r => r.key === `calm-recap.${field}`) ?? rows.find(r => r.key.startsWith('calm-recap') && r.key.endsWith(`.${field}`))
   if (row === undefined) {
@@ -150,6 +157,7 @@ async function resetSettings($: Engine) {
 async function setEnabled($: Engine, isEnabled: boolean) {
   await update($, enabledAtom, () => isEnabled)
   await $.store.set(STORE_KEY, isEnabled)
+  await syncWeather($)
   if (!isEnabled) {
     await dismissRecap($)
   }
@@ -458,6 +466,90 @@ async function setCacheMeter($: Engine, isOn: boolean) {
   return said
 }
 
+// ── Weather ─────────────────────────────────────────────────────────────────
+// "⛅ 31°C" beside the gear, as in Calm Mode. The city comes from the computer's internet address (ipwho.is,
+// looked up once a day), the reading from Open-Meteo every 15 minutes; neither needs an account. On by default;
+// the lookup sends the internet address to ipwho.is, which the README says, and the switch turns it off.
+
+const WEATHER_EVERY_MS = 15 * 60_000
+const LOCATION_FOR_MS = 24 * 60 * 60_000
+const LOCATION_KEY = 'weatherLocation'
+
+export const weatherAtom = atom({ plugin: 'calm-recap', key: 'weather' } as const, null)
+
+/** The WMO weather code as one symbol; clear and partly cloudy skies change at night. */
+export function weatherSymbol(code: number, isDay: boolean): string {
+  if (code === 0) return isDay ? '☀' : '☾'
+  if (code === 1 || code === 2) return isDay ? '⛅' : '☁'
+  if (code === 3) return '☁'
+  if (code === 45 || code === 48) return '🌫'
+  if (code >= 51 && code <= 57) return '🌦'
+  if ((code >= 61 && code <= 67) || (code >= 80 && code <= 82)) return '🌧'
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return '❄'
+  if (code >= 95) return '⛈'
+  return '☁'
+}
+
+/** "⛅ 31°C" */
+export const weatherText = (weather: { symbol: string; tempC: number }) => `${weather.symbol} ${Math.round(weather.tempC)}°C`
+
+async function weatherLocation($: Engine): Promise<{ latitude: number; longitude: number; city: string } | undefined> {
+  const now = await $.clock.now()
+  const saved = (await $.store.get(LOCATION_KEY)) as { latitude: number; longitude: number; city: string; at: number } | undefined
+  if (saved !== undefined && now - saved.at < LOCATION_FOR_MS) {
+    return saved
+  }
+  const found = await $.http.fetch('https://ipwho.is/')
+  if (!found.ok) {
+    return saved
+  }
+  const geo = JSON.parse(found.text) as { success?: boolean; latitude?: number; longitude?: number; city?: string }
+  if (geo.success !== true || typeof geo.latitude !== 'number' || typeof geo.longitude !== 'number') {
+    return saved
+  }
+  const location = { latitude: geo.latitude, longitude: geo.longitude, city: geo.city ?? '', at: now }
+  await $.store.set(LOCATION_KEY, location)
+  return location
+}
+
+async function refreshWeather($: Engine) {
+  const location = await weatherLocation($)
+  if (location === undefined) {
+    return
+  }
+  const url =
+    'https://api.open-meteo.com/v1/forecast' +
+    `?latitude=${location.latitude}&longitude=${location.longitude}&current=temperature_2m,weather_code,is_day`
+  const reply = await $.http.fetch(url)
+  if (!reply.ok) {
+    return
+  }
+  const current = (JSON.parse(reply.text) as { current?: { temperature_2m?: number; weather_code?: number; is_day?: number } }).current
+  if (typeof current?.temperature_2m !== 'number' || typeof current.weather_code !== 'number') {
+    return
+  }
+  const weather = {
+    symbol: weatherSymbol(current.weather_code, current.is_day !== 0),
+    tempC: current.temperature_2m,
+    city: location.city,
+  }
+  await update($, weatherAtom, () => weather)
+}
+
+/** Checks the weather every 15 minutes while it is turned on; no timer runs while it is off. */
+async function syncWeather($: Engine) {
+  const isOn = (await read($, enabledAtom)) && (await read($, settingsAtom)).weather
+  if (isOn && runtime.weatherTimer === null) {
+    runtime.weatherTimer = $.clock.every(WEATHER_EVERY_MS, () => {
+      void refreshWeather($).catch(() => undefined)
+    })
+    await refreshWeather($).catch(() => undefined)
+  } else if (!isOn && runtime.weatherTimer !== null) {
+    runtime.weatherTimer.cancel()
+    runtime.weatherTimer = null
+  }
+}
+
 // ── Hooks ───────────────────────────────────────────────────────────────────
 
 export function registerCalmRecap(on: On, options?: unknown): void {
@@ -467,6 +559,7 @@ export function registerCalmRecap(on: On, options?: unknown): void {
     const stored = await $.store.get(STORE_KEY)
     await update($, enabledAtom, () => (typeof stored === 'boolean' ? stored : true))
     await update($, settingsAtom, () => configured)
+    void syncWeather($).catch(() => undefined)
     // The button shows what the status line really holds; reading it changes nothing.
     void isCacheMeterInstalled($).then(isInstalled => {
       if (isInstalled !== undefined && isInstalled !== configured.cacheMeter) {
@@ -554,6 +647,8 @@ export function registerCalmRecap(on: On, options?: unknown): void {
     const settings = await read($, settingsAtom)
     const isSettingsOpen = await read($, settingsOpenAtom)
     const recap = isEnabled ? await read($, recapAtom) : null
+    const weather = isEnabled && settings.weather ? await read($, weatherAtom) : null
+    const weatherCell = weather === null ? '' : `${weatherText(weather)}  `
     const theme = settings.cyberpunk ? CYBERPUNK : CLASSIC
     const columns = Math.max(20, e.props.bodyColumns)
     const now = await $.clock.now()
@@ -561,6 +656,11 @@ export function registerCalmRecap(on: On, options?: unknown): void {
     const label = toggleLabel(settings, isEnabled)
     const buttons = (
       <Box flexDirection="row">
+        {weatherCell === '' ? null : (
+          <Text dimColor={!settings.cyberpunk} color={settings.cyberpunk ? theme.accent : undefined}>
+            {weatherCell}
+          </Text>
+        )}
         <Button key="recap-settings" label={theme.gear} plain dimColor={!isSettingsOpen} onPress={() => update($, settingsOpenAtom, isOpen => !isOpen)} />
         <Text> </Text>
         <Button
@@ -572,7 +672,7 @@ export function registerCalmRecap(on: On, options?: unknown): void {
         />
       </Box>
     )
-    const headerRoom = Math.max(4, columns - (theme.gear.length + 1 + label.length + 4) - 1)
+    const headerRoom = Math.max(4, columns - (weatherCell.length + theme.gear.length + 1 + label.length + 4) - 1)
 
     // ── Settings: one tab at a time, each row "name · switch · what it does" ──
     const tab = await read($, settingsTabAtom)
@@ -589,7 +689,10 @@ export function registerCalmRecap(on: On, options?: unknown): void {
       </Box>
     )
     const tabRows: Record<RecapTab, JSX.Element[]> = {
-      display: [row('r-cyber', name('Cyberpunk'), toggle('set-cyber', settings.cyberpunk, () => setOption($, 'cyberpunk', !settings.cyberpunk)), about(SETTING_HELP.cyberpunk))],
+      display: [
+        row('r-cyber', name('Cyberpunk'), toggle('set-cyber', settings.cyberpunk, () => setOption($, 'cyberpunk', !settings.cyberpunk)), about(SETTING_HELP.cyberpunk)),
+        row('r-weather', name('Weather'), toggle('set-weather', settings.weather, () => setOption($, 'weather', !settings.weather)), about(settings.weather ? SETTING_HELP.weather : 'City found from your internet address')),
+      ],
       recap: [
         row(
           'r-after',
