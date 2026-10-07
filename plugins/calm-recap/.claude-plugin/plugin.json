@@ -2,7 +2,9 @@
   "name": "calm-recap",
   "version": "0.3.1",
   "description": "Calm Recap: a Welcome back card when you return to the keyboard, and the prompt cache's hit rate and time left in your status line.",
-  "author": { "name": "Newk" },
+  "author": {
+    "name": "Newk"
+  },
   "types": "./types/index.d.ts",
   "userConfig": {
     "buttonLabel": {
@@ -28,7 +30,10 @@
       "title": "Recap style",
       "description": "Where the Welcome back recap reads: band (above the prompt, fitted to its rows) or pane (a larger panel of its own).",
       "default": "band",
-      "options": ["band", "pane"]
+      "options": [
+        "band",
+        "pane"
+      ]
     },
     "weather": {
       "type": "boolean",

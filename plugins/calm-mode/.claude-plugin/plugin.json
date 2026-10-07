@@ -2,7 +2,9 @@
   "name": "calm-mode",
   "version": "0.13.1",
   "description": "Calm Mode: hides tool calls and shows one friendly checklist above the prompt while Claude works.",
-  "author": { "name": "Newk" },
+  "author": {
+    "name": "Newk"
+  },
   "types": "./types/index.d.ts",
   "userConfig": {
     "hideToolRows": {
@@ -52,7 +54,13 @@
       "title": "Music track",
       "description": "Built-in track to play when no music file is set; shuffle picks a random one each job.",
       "default": "neon-drive",
-      "options": ["neon-drive", "night-rain", "hacker-pulse", "chrome-ambient", "shuffle"]
+      "options": [
+        "neon-drive",
+        "night-rain",
+        "hacker-pulse",
+        "chrome-ambient",
+        "shuffle"
+      ]
     },
     "awayRecap": {
       "type": "boolean",
@@ -71,7 +79,10 @@
       "title": "Recap style",
       "description": "Where the Welcome back recap reads: band (above the prompt, fitted to its rows) or pane (a larger panel of its own, with the job's steps).",
       "default": "band",
-      "options": ["band", "pane"]
+      "options": [
+        "band",
+        "pane"
+      ]
     },
     "weather": {
       "type": "boolean",
