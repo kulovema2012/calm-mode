@@ -1071,6 +1071,7 @@ async function weatherLocation($: Engine): Promise<{ latitude: number; longitude
  * looked up at all. A name with no match says so once and shows no weather until it is changed.
  */
 /** Where Homebrew puts the macOS location helper, tried in order (the first relies on PATH). */
+const MAC_CHECK_KEY = 'macLocationCheck'
 const MAC_LOCATION_HELPERS = ['CoreLocationCLI', '/opt/homebrew/bin/CoreLocationCLI', '/usr/local/bin/CoreLocationCLI']
 
 /** Turns the helper's "latitude|longitude|city|province" line into a place; blank or "(null)" parts are skipped. */
@@ -1094,16 +1095,28 @@ async function macLocation($: Engine): Promise<{ latitude: number; longitude: nu
   if ((await $.env.get('USERPROFILE')) !== undefined || home === undefined || !home.startsWith('/Users/')) {
     return undefined
   }
+  // What each try did, kept in the plugin store as 'macLocationCheck' so a failure can be explained.
+  const tries: string[] = []
   for (const helper of MAC_LOCATION_HELPERS) {
     const ran = await $.process
       .run([helper, '--format', '%latitude|%longitude|%locality|%subAdministrativeArea|%administrativeArea'], {
         timeoutMs: 20000,
       })
-      .catch(() => undefined)
-    if (ran !== undefined && ran.exitCode === 0) {
-      return parseMacLocation(ran.stdout)
+      .catch((error: unknown) => String(error instanceof Error ? error.message : error).slice(0, 200))
+    if (typeof ran === 'string') {
+      tries.push(`${helper}: failed to run: ${ran}`)
+      continue
+    }
+    const place = ran.exitCode === 0 ? parseMacLocation(ran.stdout) : undefined
+    tries.push(
+      `${helper}: exit ${String(ran.exitCode)}${place === undefined ? `, ${(ran.stderr + ran.stdout).trim().slice(0, 200)}` : `, found ${place.city}`}`,
+    )
+    if (place !== undefined) {
+      await $.store.set(MAC_CHECK_KEY, { at: await $.clock.now(), tries }).catch(() => undefined)
+      return place
     }
   }
+  await $.store.set(MAC_CHECK_KEY, { at: await $.clock.now(), tries }).catch(() => undefined)
   return undefined
 }
 
