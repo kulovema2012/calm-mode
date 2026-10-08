@@ -107,7 +107,7 @@ declare module 'claude-code' {
       /** One line on the setting changed last, shown under the panel. */
       settingsHint: string | null
       /** The latest weather reading, while the weather is turned on. */
-      weather: { symbol: string; tempC: number; city: string } | null
+      weather: { symbol: string; tempC: number; city: string; source?: 'typed' | 'mac' | 'ip' } | null
       /** Keep-warm for this session. */
       keepWarm: KeepWarm | null
       /** Set once this process has started, to tell a resumed session from a hot reload. */

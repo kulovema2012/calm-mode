@@ -1031,27 +1031,45 @@ export function weatherSymbol(code: number, isDay: boolean): string {
 }
 
 /** "📍 Bangkok ⛅ 31°C", or "⛅ 31°C" when the city is unknown; a long city name is shortened. */
-export function weatherText(weather: { symbol: string; tempC: number; city?: string }): string {
+export function weatherText(weather: { symbol: string; tempC: number; city?: string; source?: PlaceSource }): string {
   const city = (weather.city ?? '').trim()
-  const place = city === '' ? '' : `📍 ${city.length > CITY_LIMIT ? `${city.slice(0, CITY_LIMIT - 1)}…` : city} `
+  // "?" marks a city guessed from the internet address, which can be off by a province.
+  const guess = weather.source === 'ip' ? '?' : ''
+  const place = city === '' ? '' : `📍 ${city.length > CITY_LIMIT ? `${city.slice(0, CITY_LIMIT - 1)}…` : city}${guess} `
   return `${place}${weather.symbol} ${Math.round(weather.tempC)}°C`
 }
 
-async function weatherLocation($: Engine): Promise<{ latitude: number; longitude: number; city: string } | undefined> {
+type Place = { latitude: number; longitude: number; city: string }
+
+/** Where the weather's city came from: typed in, the Mac's Location Services, or a guess from the internet address. */
+export type PlaceSource = 'typed' | 'mac' | 'ip'
+
+/** A Mac whose location helper is installed but failed tries again this soon, instead of keeping a guess an hour. */
+const MAC_RETRY_MS = 15 * 60_000
+const MAC_TIP_KEY = 'macLocationTipShown'
+
+async function weatherLocation($: Engine): Promise<(Place & { source: PlaceSource }) | undefined> {
   const typed = (await read($, settingsAtom)).weatherCity
   if (typed !== '') {
-    return typedCityLocation($, typed)
+    const place = await typedCityLocation($, typed)
+    return place === undefined ? undefined : { ...place, source: 'typed' }
   }
   const now = await $.clock.now()
-  const saved = (await $.store.get(LOCATION_KEY)) as { latitude: number; longitude: number; city: string; at: number } | undefined
+  const stored = (await $.store.get(LOCATION_KEY)) as (Place & { at: number; source?: PlaceSource }) | undefined
+  // Saved before this version, a location has no source; those all came from the internet address.
+  const saved = stored === undefined ? undefined : { ...stored, source: stored.source ?? 'ip' }
   if (saved !== undefined && now - saved.at < LOCATION_FOR_MS) {
     return saved
   }
-  const here = await macLocation($).catch(() => undefined)
-  if (here !== undefined) {
-    const location = { ...here, at: now }
+  // An unexpected error is treated like another system: no Mac retry and no tip.
+  const mac = await macLocation($).catch(() => 'not-mac' as const)
+  if (typeof mac === 'object') {
+    const location = { ...mac, source: 'mac' as const, at: now }
     await $.store.set(LOCATION_KEY, location)
     return location
+  }
+  if (mac === 'missing') {
+    await showMacLocationTip($)
   }
   const found = await $.http.fetch('https://ipwho.is/')
   if (!found.ok) {
@@ -1061,21 +1079,30 @@ async function weatherLocation($: Engine): Promise<{ latitude: number; longitude
   if (geo.success !== true || typeof geo.latitude !== 'number' || typeof geo.longitude !== 'number') {
     return saved
   }
-  const location = { latitude: geo.latitude, longitude: geo.longitude, city: geo.city ?? '', at: now }
+  // Saved as if older, so a Mac whose helper failed this time asks it again in 15 minutes rather than an hour.
+  const at = mac === 'failed' ? now - LOCATION_FOR_MS + MAC_RETRY_MS : now
+  const location = { latitude: geo.latitude, longitude: geo.longitude, city: geo.city ?? '', source: 'ip' as const, at }
   await $.store.set(LOCATION_KEY, location)
   return location
 }
 
-/**
- * Where the typed city is, from Open-Meteo's place search, which needs no account; the internet address is not
- * looked up at all. A name with no match says so once and shows no weather until it is changed.
- */
+/** Once ever on a Mac without the helper: the city is a guess, and how to get the real one. */
+async function showMacLocationTip($: Engine) {
+  if ((await $.store.get(MAC_TIP_KEY)) === true) return
+  await $.store.set(MAC_TIP_KEY, true)
+  $.ui.toast(
+    'Calm Mode: the weather city is a guess from your internet address (marked "?"). For this Mac\'s real location run ' +
+      '`brew install corelocationcli` and allow CoreLocationCLI in Location Services, or type /calm weather city <name>.',
+    { timeoutMs: 15000 },
+  )
+}
+
 /** Where Homebrew puts the macOS location helper, tried in order (the first relies on PATH). */
 const MAC_CHECK_KEY = 'macLocationCheck'
 const MAC_LOCATION_HELPERS = ['CoreLocationCLI', '/opt/homebrew/bin/CoreLocationCLI', '/usr/local/bin/CoreLocationCLI']
 
 /** Turns the helper's "latitude|longitude|city|province" line into a place; blank or "(null)" parts are skipped. */
-export function parseMacLocation(line: string): { latitude: number; longitude: number; city: string } | undefined {
+export function parseMacLocation(line: string): Place | undefined {
   const [lat, lon, ...names] = line.trim().split('|')
   const latitude = Number(lat)
   const longitude = Number(lon)
@@ -1087,16 +1114,17 @@ export function parseMacLocation(line: string): { latitude: number; longitude: n
 
 /**
  * The Mac's real position from macOS Location Services, through the optional CoreLocationCLI helper
- * (`brew install corelocationcli`); macOS asks once to allow the terminal app. Undefined on other systems, when the
- * helper is not installed, or when location is turned off or not allowed, so the internet-address guess is used.
+ * (`brew install corelocationcli`, then allow it in Location Services). Otherwise why not: 'not-mac' on other
+ * systems, 'missing' when the helper is not installed, 'failed' when location is off, refused or timed out.
  */
-async function macLocation($: Engine): Promise<{ latitude: number; longitude: number; city: string } | undefined> {
+async function macLocation($: Engine): Promise<Place | 'not-mac' | 'missing' | 'failed'> {
   const home = await $.env.get('HOME')
   if ((await $.env.get('USERPROFILE')) !== undefined || home === undefined || !home.startsWith('/Users/')) {
-    return undefined
+    return 'not-mac'
   }
   // What each try did, kept in the plugin store as 'macLocationCheck' so a failure can be explained.
   const tries: string[] = []
+  let isInstalled = false
   for (const helper of MAC_LOCATION_HELPERS) {
     const ran = await $.process
       .run([helper, '--format', '%latitude|%longitude|%locality|%subAdministrativeArea|%administrativeArea'], {
@@ -1107,6 +1135,8 @@ async function macLocation($: Engine): Promise<{ latitude: number; longitude: nu
       tries.push(`${helper}: failed to run: ${ran}`)
       continue
     }
+    // 127 is the shell's "command not found".
+    isInstalled = isInstalled || ran.exitCode !== 127
     const place = ran.exitCode === 0 ? parseMacLocation(ran.stdout) : undefined
     tries.push(
       `${helper}: exit ${String(ran.exitCode)}${place === undefined ? `, ${(ran.stderr + ran.stdout).trim().slice(0, 200)}` : `, found ${place.city}`}`,
@@ -1117,9 +1147,13 @@ async function macLocation($: Engine): Promise<{ latitude: number; longitude: nu
     }
   }
   await $.store.set(MAC_CHECK_KEY, { at: await $.clock.now(), tries }).catch(() => undefined)
-  return undefined
+  return isInstalled ? 'failed' : 'missing'
 }
 
+/**
+ * Where the typed city is, from Open-Meteo's place search, which needs no account; the internet address is not
+ * looked up at all. A name with no match says so once and shows no weather until it is changed.
+ */
 async function typedCityLocation(
   $: Engine,
   name: string,
@@ -1170,6 +1204,7 @@ async function refreshWeather($: Engine) {
     symbol: weatherSymbol(current.weather_code, current.is_day !== 0),
     tempC: current.temperature_2m,
     city: location.city,
+    source: location.source,
   }
   await update($, weatherAtom, () => weather)
 }
@@ -2045,7 +2080,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
         row('r-hide', name('Hide tool rows'), toggle('set-hide', settings.hideToolRows, () => setOption($, 'hideToolRows', !settings.hideToolRows)), about(SETTING_HELP.hideToolRows)),
         row('r-naming', name('Job naming'), toggle('set-naming', settings.jobNaming, () => setOption($, 'jobNaming', !settings.jobNaming)), about(SETTING_HELP.jobNaming)),
         row('r-cyber', name('Cyberpunk'), toggle('set-cyber', settings.cyberpunk, () => setOption($, 'cyberpunk', !settings.cyberpunk)), about(SETTING_HELP.cyberpunk)),
-        row('r-weather', name('Weather'), toggle('set-weather', settings.weather, () => setOption($, 'weather', !settings.weather)), about(settings.weather ? SETTING_HELP.weather : 'City found from your internet address')),
+        row('r-weather', name('Weather'), toggle('set-weather', settings.weather, () => setOption($, 'weather', !settings.weather)), about(settings.weather ? (weather?.source === 'ip' ? 'City is a guess (?): set Weather city' : SETTING_HELP.weather) : 'City found from your internet address')),
       ],
       music: [
         row('r-music', name('Music', !settings.cyberpunk), toggle('set-music', settings.music, () => setOption($, 'music', !settings.music), !settings.cyberpunk), about(settings.cyberpunk ? SETTING_HELP.music : 'Turn Cyberpunk on (Display tab) to hear it')),

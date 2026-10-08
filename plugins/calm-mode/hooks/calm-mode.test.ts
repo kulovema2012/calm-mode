@@ -795,7 +795,7 @@ test('by default the weather shows beside the gear and refreshes every 15 minute
   const clock = await start($, on)
   await clock.advance(10)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await ui.find({ type: 'Text', text: '📍 Bangkok ⛅ 31°C  ' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '📍 Bangkok? ⛅ 31°C  ' })).toBeDefined()
   expect(calls.filter(url => url.includes('ipwho.is')).length).toBe(1)
   // finish the job first, so 15 minutes of progress animation do not have to play out
   await $.turn.complete(FINISHED as never)
@@ -1036,7 +1036,7 @@ test('the macOS helper line becomes a place', () => {
 })
 
 /** A Mac: HOME under /Users, and CoreLocationCLI answering (or missing) for every path tried. */
-function fakeMac(on: On, runs: string[][], stdout: string | null) {
+function fakeMac(on: On, runs: string[][], stdout: string | null | 'refused') {
   on('env.get', (_$, e) => ({ value: e.name === 'HOME' ? '/Users/me' : undefined }) as never)
   on('process.run', (_$, e) => {
     const argv = [...(e as unknown as { argv: string[] }).argv]
@@ -1044,7 +1044,9 @@ function fakeMac(on: On, runs: string[][], stdout: string | null) {
     if (!String(argv[0]).includes('CoreLocationCLI')) return { value: { exitCode: 1, stdout: '', stderr: '' } } as never
     return (stdout === null
       ? { value: { exitCode: 127, stdout: '', stderr: 'not found' } }
-      : { value: { exitCode: 0, stdout, stderr: '' } }) as never
+      : stdout === 'refused'
+        ? { value: { exitCode: 1, stdout: '', stderr: 'location access denied' } }
+        : { value: { exitCode: 0, stdout, stderr: '' } }) as never
   })
 }
 
@@ -1070,7 +1072,7 @@ test('on a Mac without the helper, the internet address is used as before', asyn
   const clock = await start($, on, undefined, false)
   await clock.advance(10)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await ui.find({ type: 'Text', text: /📍 Bangkok/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /📍 Bangkok\? / })).toBeDefined()
   expect(runs.filter(argv => String(argv[0]).includes('CoreLocationCLI')).length).toBe(3)
   await ui.unmount()
 })
@@ -1086,4 +1088,59 @@ test('a typed city wins over the macOS helper', { options: { weatherCity: 'Khon 
   expect(await ui.find({ type: 'Text', text: /📍 Khon Kaen/ })).toBeDefined()
   expect(runs.some(argv => String(argv[0]).includes('CoreLocationCLI'))).toBe(false)
   await ui.unmount()
+})
+
+// ── Where the city came from ────────────────────────────────────────────────
+
+test('a guessed city is marked with "?", a typed or Mac one is not', () => {
+  expect(weatherText({ symbol: '☀', tempC: 29, city: 'Bangkok', source: 'ip' })).toBe('📍 Bangkok? ☀ 29°C')
+  expect(weatherText({ symbol: '☀', tempC: 29, city: 'Buri Ram', source: 'mac' })).toBe('📍 Buri Ram ☀ 29°C')
+  expect(weatherText({ symbol: '☀', tempC: 29, city: 'Khon Kaen', source: 'typed' })).toBe('📍 Khon Kaen ☀ 29°C')
+})
+
+test('the Mac position shows without "?"', async ($, on) => {
+  const calls: string[] = []
+  const runs: string[][] = []
+  fakeWeather(on, calls)
+  fakeMac(on, runs, '15.29|103.29|Satuek District||Buri Ram')
+  const clock = await start($, on, undefined, false)
+  await clock.advance(10)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /📍 Satuek District ⛅/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a Mac whose helper failed asks it again after 15 minutes, not an hour', async ($, on) => {
+  const calls: string[] = []
+  const runs: string[][] = []
+  fakeWeather(on, calls)
+  fakeMac(on, runs, 'refused')
+  const clock = await start($, on, undefined, false)
+  await clock.advance(10)
+  const helperRuns = () => runs.filter(argv => String(argv[0]).includes('CoreLocationCLI')).length
+  expect(helperRuns()).toBe(3)
+  await clock.advance(15 * 60_000)
+  expect(helperRuns()).toBe(6)
+})
+
+test('a Mac without the helper keeps its guess for the hour', async ($, on) => {
+  const calls: string[] = []
+  const runs: string[][] = []
+  fakeWeather(on, calls)
+  fakeMac(on, runs, null)
+  const clock = await start($, on, undefined, false)
+  await clock.advance(10)
+  await clock.advance(15 * 60_000)
+  expect(runs.filter(argv => String(argv[0]).includes('CoreLocationCLI')).length).toBe(3)
+})
+
+test('a Mac without the helper gets the location tip once', async ($, on) => {
+  const calls: string[] = []
+  const runs: string[][] = []
+  fakeWeather(on, calls)
+  fakeMac(on, runs, null)
+  const clock = await start($, on, undefined, false)
+  await clock.advance(10)
+  await clock.advance(60 * 60_000)
+  expect(toasts.filter(toast => toast.includes('brew install corelocationcli')).length).toBe(1)
 })
