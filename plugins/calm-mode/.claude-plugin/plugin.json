@@ -1,6 +1,6 @@
 {
   "name": "calm-mode",
-  "version": "0.15.2",
+  "version": "0.16.0",
   "description": "Calm Mode: hides tool calls and shows one friendly checklist above the prompt while Claude works.",
   "author": {
     "name": "Newk"
@@ -83,6 +83,12 @@
         "band",
         "pane"
       ]
+    },
+    "weatherCity": {
+      "type": "string",
+      "title": "Weather city",
+      "description": "A city for the weather, e.g. \"Khon Kaen\" (found with Open-Meteo's place search). Leave blank to work it out from your internet address, which can be off by a city or more.",
+      "default": ""
     },
     "weather": {
       "type": "boolean",

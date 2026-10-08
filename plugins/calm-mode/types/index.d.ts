@@ -55,6 +55,8 @@ export type CalmSettings = {
   recapStyle: 'band' | 'pane'
   /** Show the weather beside the gear; the city comes from the internet address. */
   weather: boolean
+  /** A city typed in for the weather; blank finds it from the internet address. */
+  weatherCity: string
 }
 
 /** The settings panel's tabs. */

@@ -86,7 +86,7 @@ Every switch is an icon, `◉` on and `○` off, each row says what it does, and
 
 | Tab | Settings |
 |---|---|
-| Display | Hide tool rows, Job naming, Cyberpunk, Weather, Button label |
+| Display | Hide tool rows, Job naming, Cyberpunk, Weather, Button label, Weather city |
 | Music | Music, Volume, Track, Music file |
 | Recap | Away recap, Away after, Recap style |
 | Status line | Cache in status line, Keep warm |
@@ -116,7 +116,7 @@ Claude Code gives the band at most half the terminal's height. Calm Mode never m
 
 ### Weather
 
-With **Weather** on (Display tab), the band shows your city, a symbol and the temperature beside ⚙, e.g. `📍 Bangkok ⛅ 31°C` (☀ ☾ ⛅ ☁ 🌫 🌦 🌧 ❄ ⛈). Your city is worked out from your internet address with [ipwho.is](https://ipwho.is), at most once an hour (so a new network shows within the hour), and the reading comes from [Open-Meteo](https://open-meteo.com) every 15 minutes; neither needs an account. It is on by default. **Privacy:** the lookup sends your internet address to ipwho.is; turn Weather off to stop all weather requests.
+With **Weather** on (Display tab), the band shows your city, a symbol and the temperature beside ⚙, e.g. `📍 Bangkok ⛅ 31°C` (☀ ☾ ⛅ ☁ 🌫 🌦 🌧 ❄ ⛈). Your city is worked out from your internet address with [ipwho.is](https://ipwho.is), at most once an hour (so a new network shows within the hour), and the reading comes from [Open-Meteo](https://open-meteo.com) every 15 minutes; neither needs an account. It is on by default. **Privacy:** the lookup sends your internet address to ipwho.is; turn Weather off to stop all weather requests, or type a Weather city to stop the address lookup. Internet-address locations are often off by a city or more (a home fibre line may show as the provider's Bangkok office), so you can type your own instead: **Weather city** on the Display tab, or `/calm weather city Khon Kaen`. A typed city is found once with Open-Meteo's place search and ipwho.is is not asked at all; `/calm weather city` with no name goes back to automatic.
 
 ### Built-in tracks
 

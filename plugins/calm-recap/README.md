@@ -36,7 +36,7 @@ To add the marketplace first and choose a plugin later, type `/plugin marketplac
 - **`/recap`** shows the card any time.
 - **Cache meter** in your status line, at its right end: `⚡ cache 87% ▰▰▰▰▰▰▰▰▱▱ 47m`, the share of the last request read from the prompt cache and a bar of the time left before it goes cold. Turn it on with `/recap statusline on` or the switch in the settings panel; it wraps your existing status line and `off` puts it back.
 
-- **Weather** beside ⚙: your city, a symbol and the temperature, e.g. `📍 Bangkok ⛅ 31°C` (☀ ☾ ⛅ ☁ 🌫 🌦 🌧 ❄ ⛈). Your city is worked out from your internet address with [ipwho.is](https://ipwho.is) at most once an hour (so a new network shows within the hour), and the reading comes from [Open-Meteo](https://open-meteo.com) every 15 minutes. It is on by default. **Privacy:** the lookup sends your internet address to ipwho.is; turn Weather off (Display tab) to stop all weather requests.
+- **Weather** beside ⚙: your city, a symbol and the temperature, e.g. `📍 Bangkok ⛅ 31°C` (☀ ☾ ⛅ ☁ 🌫 🌦 🌧 ❄ ⛈). Your city is worked out from your internet address with [ipwho.is](https://ipwho.is) at most once an hour (so a new network shows within the hour), and the reading comes from [Open-Meteo](https://open-meteo.com) every 15 minutes. It is on by default. **Privacy:** the lookup sends your internet address to ipwho.is; turn Weather off (Display tab) to stop all weather requests, or type a Weather city to stop the address lookup. Internet-address locations are often off by a city or more (a home fibre line may show as the provider's Bangkok office), so you can type your own instead: **Weather city** on the Display tab, or `/recap weather city Khon Kaen`. A typed city is found once with Open-Meteo's place search and ipwho.is is not asked at all; `/recap weather city` with no name goes back to automatic.
 
 ### Keep warm
 
@@ -58,6 +58,7 @@ It needs the cache meter in your status line (that is how it knows when the cach
 | `/recap` | Show the Welcome back card now |
 | `/recap on` / `/recap off` | Turn Calm Recap on or off (also the button on the band) |
 | `/recap statusline on` / `off` | Add or remove the cache meter in your status line |
+| `/recap weather city Khon Kaen` | Show the weather for a city you choose (no name: back to automatic) |
 | `/recap keepwarm on` / `3h` / `until 18:00` / `off` | Keep the prompt cache warm while you are away |
 
 ## Settings
@@ -74,7 +75,7 @@ Click **⚙** beside the on/off button. One tab at a time; click a tab or press 
 
 | Tab | Settings |
 |---|---|
-| Display | Job naming, Cyberpunk (neon look, 🌃 button; the normal look has 🍃), Weather, Button label |
+| Display | Job naming, Cyberpunk (neon look, 🌃 button; the normal look has 🍃), Weather, Button label, Weather city |
 | Recap | Away after (1 to 120 minutes), Recap style (Band or Pane) |
 | Status line | Cache in status line, Keep warm |
 

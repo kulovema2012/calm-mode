@@ -21,6 +21,7 @@ export const DEFAULT_SETTINGS: RecapSettings = {
   recapStyle: 'band',
   cacheMeter: false,
   weather: true,
+  weatherCity: '',
   jobNaming: true,
 }
 
@@ -75,6 +76,8 @@ export function normalizeSettings(options: unknown): RecapSettings {
     recapStyle: raw.recapStyle === 'pane' ? 'pane' : 'band',
     cacheMeter: typeof raw.cacheMeter === 'boolean' ? raw.cacheMeter : DEFAULT_SETTINGS.cacheMeter,
     weather: typeof raw.weather === 'boolean' ? raw.weather : DEFAULT_SETTINGS.weather,
+    weatherCity:
+      typeof raw.weatherCity === 'string' ? raw.weatherCity.replace(/\s+/g, ' ').trim().slice(0, 60) : '',
     jobNaming: typeof raw.jobNaming === 'boolean' ? raw.jobNaming : DEFAULT_SETTINGS.jobNaming,
   }
 }
@@ -111,6 +114,7 @@ export const SETTING_HELP: Record<keyof RecapSettings, string> = {
   recapStyle: 'Band above the prompt, or a pane',
   cacheMeter: 'Cache hit and time left, at its right end',
   weather: 'Temperature now, by your city',
+  weatherCity: 'Blank finds it from your internet address',
   jobNaming: 'Haiku gives each job a short name',
 }
 
@@ -121,6 +125,7 @@ const SETTING_NAMES: Record<keyof RecapSettings, string> = {
   recapStyle: 'Recap style',
   cacheMeter: 'Cache in status line',
   weather: 'Weather',
+  weatherCity: 'Weather city',
   jobNaming: 'Job naming',
 }
 
@@ -139,7 +144,9 @@ export function settingHint<K extends keyof RecapSettings>(field: K, value: Reca
           ? value === 'pane'
             ? 'Pane'
             : 'Band'
-          : `"${String(value)}"`
+          : field === 'weatherCity' && value === ''
+            ? 'automatic'
+            : `"${String(value)}"`
   return `${SETTING_NAMES[field]}: ${shown}. ${SETTING_HELP[field]}.`
 }
 
@@ -149,6 +156,10 @@ async function setOption<K extends keyof RecapSettings>($: Engine, field: K, val
   await update($, settingsAtom, () => next)
   await update($, settingsHintAtom, () => settingHint(field, next[field]))
   await syncWeather($)
+  if (field === 'weatherCity' && next.weather) {
+    // The timer is already running; show the new city now rather than within 15 minutes.
+    await refreshWeather($).catch(() => undefined)
+  }
   const rows = await $.config.list().catch(() => [])
   const row = rows.find(r => r.key === `calm-recap.${field}`) ?? rows.find(r => r.key.startsWith('calm-recap') && r.key.endsWith(`.${field}`))
   if (row === undefined) {
@@ -676,6 +687,8 @@ const WEATHER_EVERY_MS = 15 * 60_000
 const LOCATION_FOR_MS = 60 * 60_000
 const CITY_LIMIT = 18
 const LOCATION_KEY = 'weatherLocation'
+// A city typed into Weather city is found once with Open-Meteo's place search and kept until the name changes.
+const CITY_KEY = 'weatherCityLocation'
 
 export const weatherAtom = atom({ plugin: 'calm-recap', key: 'weather' } as const, null)
 
@@ -700,6 +713,10 @@ export function weatherText(weather: { symbol: string; tempC: number; city?: str
 }
 
 async function weatherLocation($: Engine): Promise<{ latitude: number; longitude: number; city: string } | undefined> {
+  const typed = (await read($, settingsAtom)).weatherCity
+  if (typed !== '') {
+    return typedCityLocation($, typed)
+  }
   const now = await $.clock.now()
   const saved = (await $.store.get(LOCATION_KEY)) as { latitude: number; longitude: number; city: string; at: number } | undefined
   if (saved !== undefined && now - saved.at < LOCATION_FOR_MS) {
@@ -715,6 +732,40 @@ async function weatherLocation($: Engine): Promise<{ latitude: number; longitude
   }
   const location = { latitude: geo.latitude, longitude: geo.longitude, city: geo.city ?? '', at: now }
   await $.store.set(LOCATION_KEY, location)
+  return location
+}
+
+/**
+ * Where the typed city is, from Open-Meteo's place search, which needs no account; the internet address is not
+ * looked up at all. A name with no match says so once and shows no weather until it is changed.
+ */
+async function typedCityLocation(
+  $: Engine,
+  name: string,
+): Promise<{ latitude: number; longitude: number; city: string } | undefined> {
+  const saved = (await $.store.get(CITY_KEY)) as
+    | { query: string; latitude: number; longitude: number; city: string }
+    | { query: string; isMissing: true }
+    | undefined
+  if (saved !== undefined && saved.query === name) {
+    return 'isMissing' in saved ? undefined : saved
+  }
+  const found = await $.http.fetch(
+    `https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&format=json&name=${encodeURIComponent(name)}`,
+  )
+  if (!found.ok) {
+    return undefined
+  }
+  const place = (JSON.parse(found.text) as { results?: Array<{ name?: string; latitude?: number; longitude?: number }> })
+    .results?.[0]
+  if (place === undefined || typeof place.latitude !== 'number' || typeof place.longitude !== 'number') {
+    await $.store.set(CITY_KEY, { query: name, isMissing: true })
+    await update($, weatherAtom, () => null)
+    $.ui.toast(`Calm Recap: no place called "${name}" found. Check the spelling in Weather city.`)
+    return undefined
+  }
+  const location = { query: name, latitude: place.latitude, longitude: place.longitude, city: place.name ?? name }
+  await $.store.set(CITY_KEY, location)
   return location
 }
 
@@ -847,7 +898,7 @@ export function registerCalmRecap(on: On, options?: unknown): void {
     await $.command.register({
       name: 'recap',
       description: 'Show the Welcome back card now; on|off turns Calm Recap on or off; statusline on|off adds the cache meter; keepwarm keeps the cache warm',
-      argumentHint: '[on|off] | statusline on|off | keepwarm on|off|3h|until 18:00',
+      argumentHint: '[on|off] | statusline on|off | keepwarm on|off|3h|until 18:00 | weather city <name>',
       immediate: true,
     })
     return next(e)
@@ -855,6 +906,17 @@ export function registerCalmRecap(on: On, options?: unknown): void {
 
   on('command.run', { command: 'recap' }, async ($, e) => {
     const arg = e.args.trim().toLowerCase()
+    const city = /^weather\s+city(?:\s+(.*))?$/i.exec(e.args.trim())
+    if (city !== null) {
+      const typed = (city[1] ?? '').trim()
+      await setOption($, 'weatherCity', typed)
+      return {
+        text:
+          typed === ''
+            ? 'Weather city cleared: the city comes from your internet address again.'
+            : `Weather city set to "${typed}".`,
+      }
+    }
     if (arg === 'keepwarm' || arg.startsWith('keepwarm ')) {
       return { text: await keepWarmCommand($, arg.slice('keepwarm'.length)) }
     }
@@ -1026,7 +1088,7 @@ export function registerCalmRecap(on: On, options?: unknown): void {
       display:
         Input === undefined
           ? []
-          : [<Input key="set-label" label={`  ${'Button label'.padEnd(labelWidth)}`} placeholder={DEFAULT_LABEL} value={settings.buttonLabel} submitLabel="save" onSubmit={value => setOption($, 'buttonLabel', value)} />],
+          : [<Input key="set-label" label={`  ${'Button label'.padEnd(labelWidth)}`} placeholder={DEFAULT_LABEL} value={settings.buttonLabel} submitLabel="save" onSubmit={value => setOption($, 'buttonLabel', value)} />, <Input key="set-weather-city" label={`  ${'Weather city'.padEnd(labelWidth)}`} placeholder="automatic (internet address)" value={settings.weatherCity} submitLabel="save" onSubmit={value => setOption($, 'weatherCity', value)} />],
       recap: [],
       status: [],
     }

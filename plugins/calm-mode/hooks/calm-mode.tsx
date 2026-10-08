@@ -300,6 +300,7 @@ export const SETTING_HELP: Record<keyof CalmSettings, string> = {
   cacheMeter: 'Cache hit and time left, at its right end',
   recapStyle: 'Band above the prompt, or a pane',
   weather: 'Temperature now, by your city',
+  weatherCity: 'Blank finds it from your internet address',
 }
 
 const SETTING_NAMES: Record<keyof CalmSettings, string> = {
@@ -316,6 +317,7 @@ const SETTING_NAMES: Record<keyof CalmSettings, string> = {
   cacheMeter: 'Cache in status line',
   recapStyle: 'Recap style',
   weather: 'Weather',
+  weatherCity: 'Weather city',
 }
 
 /** Every switch reads the same way. */
@@ -338,7 +340,7 @@ export function settingHint<K extends keyof CalmSettings>(field: K, value: CalmS
             : field === 'recapStyle'
               ? value === 'pane' ? 'Pane' : 'Band'
               : value === ''
-                ? 'default'
+                ? field === 'weatherCity' ? 'automatic' : 'default'
                 : `"${String(value)}"`
   return `${SETTING_NAMES[field]}: ${shown}. ${SETTING_HELP[field]}.`
 }
@@ -429,6 +431,7 @@ export const DEFAULT_SETTINGS: CalmSettings = {
   cacheMeter: false,
   recapStyle: 'band',
   weather: true,
+  weatherCity: '',
 }
 
 export const settingsAtom = atom({ plugin: 'calm-mode', key: 'settings' } as const, DEFAULT_SETTINGS)
@@ -455,6 +458,8 @@ export function normalizeSettings(options: unknown): CalmSettings {
     cacheMeter: flag('cacheMeter', DEFAULT_SETTINGS.cacheMeter),
     recapStyle: raw.recapStyle === 'pane' ? 'pane' : 'band',
     weather: flag('weather', DEFAULT_SETTINGS.weather),
+    weatherCity:
+      typeof raw.weatherCity === 'string' ? raw.weatherCity.replace(/\s+/g, ' ').trim().slice(0, 60) : '',
     track: TRACK_CHOICES.includes(raw.track as TrackChoice) ? (raw.track as TrackChoice) : 'neon-drive',
     musicFile: typeof raw.musicFile === 'string' ? raw.musicFile.trim().replace(/^["']+|["']+$/g, '') : '',
   }
@@ -502,6 +507,10 @@ async function setOption<K extends keyof CalmSettings>($: Engine, field: K, valu
   await update($, settingsHintAtom, () => settingHint(field, next[field]))
   await syncMusic($)
   await syncWeather($)
+  if (field === 'weatherCity' && next.weather) {
+    // The timer is already running; show the new city now rather than within 15 minutes.
+    await refreshWeather($).catch(() => undefined)
+  }
   const rows = await $.config.list().catch(() => [])
   const row = rows.find(r => r.key === `calm-mode.${field}`) ?? rows.find(r => r.key.startsWith('calm-mode') && r.key.endsWith(`.${field}`))
   if (row === undefined) {
@@ -1001,6 +1010,8 @@ const WEATHER_EVERY_MS = 15 * 60_000
 const LOCATION_FOR_MS = 60 * 60_000
 const CITY_LIMIT = 18
 const LOCATION_KEY = 'weatherLocation'
+// A city typed into Weather city is found once with Open-Meteo's place search and kept until the name changes.
+const CITY_KEY = 'weatherCityLocation'
 
 export const weatherAtom = atom({ plugin: 'calm-mode', key: 'weather' } as const, null)
 
@@ -1025,6 +1036,10 @@ export function weatherText(weather: { symbol: string; tempC: number; city?: str
 }
 
 async function weatherLocation($: Engine): Promise<{ latitude: number; longitude: number; city: string } | undefined> {
+  const typed = (await read($, settingsAtom)).weatherCity
+  if (typed !== '') {
+    return typedCityLocation($, typed)
+  }
   const now = await $.clock.now()
   const saved = (await $.store.get(LOCATION_KEY)) as { latitude: number; longitude: number; city: string; at: number } | undefined
   if (saved !== undefined && now - saved.at < LOCATION_FOR_MS) {
@@ -1040,6 +1055,40 @@ async function weatherLocation($: Engine): Promise<{ latitude: number; longitude
   }
   const location = { latitude: geo.latitude, longitude: geo.longitude, city: geo.city ?? '', at: now }
   await $.store.set(LOCATION_KEY, location)
+  return location
+}
+
+/**
+ * Where the typed city is, from Open-Meteo's place search, which needs no account; the internet address is not
+ * looked up at all. A name with no match says so once and shows no weather until it is changed.
+ */
+async function typedCityLocation(
+  $: Engine,
+  name: string,
+): Promise<{ latitude: number; longitude: number; city: string } | undefined> {
+  const saved = (await $.store.get(CITY_KEY)) as
+    | { query: string; latitude: number; longitude: number; city: string }
+    | { query: string; isMissing: true }
+    | undefined
+  if (saved !== undefined && saved.query === name) {
+    return 'isMissing' in saved ? undefined : saved
+  }
+  const found = await $.http.fetch(
+    `https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&format=json&name=${encodeURIComponent(name)}`,
+  )
+  if (!found.ok) {
+    return undefined
+  }
+  const place = (JSON.parse(found.text) as { results?: Array<{ name?: string; latitude?: number; longitude?: number }> })
+    .results?.[0]
+  if (place === undefined || typeof place.latitude !== 'number' || typeof place.longitude !== 'number') {
+    await $.store.set(CITY_KEY, { query: name, isMissing: true })
+    await update($, weatherAtom, () => null)
+    $.ui.toast(`Calm Mode: no place called "${name}" found. Check the spelling in Weather city.`)
+    return undefined
+  }
+  const location = { query: name, latitude: place.latitude, longitude: place.longitude, city: place.name ?? name }
+  await $.store.set(CITY_KEY, location)
   return location
 }
 
@@ -1485,7 +1534,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
     await $.command.register({
       name: 'calm',
       description: 'Turn Calm Mode on or off (no argument flips it); recap shows the Welcome back card; statusline on|off adds the cache meter',
-      argumentHint: '[on|off] | recap | statusline on|off | keepwarm on|off|3h|until 18:00',
+      argumentHint: '[on|off] | recap | statusline on|off | keepwarm on|off|3h|until 18:00 | weather city <name>',
       immediate: true,
     })
 
@@ -1494,6 +1543,17 @@ export function registerCalmMode(on: On, options?: unknown): void {
 
   on('command.run', { command: 'calm' }, async ($, e) => {
     const arg = e.args.trim().toLowerCase()
+    const city = /^weather\s+city(?:\s+(.*))?$/i.exec(e.args.trim())
+    if (city !== null) {
+      const typed = (city[1] ?? '').trim()
+      await setOption($, 'weatherCity', typed)
+      return {
+        text:
+          typed === ''
+            ? 'Weather city cleared: the city comes from your internet address again.'
+            : `Weather city set to "${typed}".`,
+      }
+    }
     if (arg === 'keepwarm' || arg.startsWith('keepwarm ')) {
       return { text: await keepWarmCommand($, arg.slice('keepwarm'.length)) }
     }
@@ -1959,7 +2019,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
       Input === undefined
         ? { display: [], music: [], recap: [], status: [] }
         : {
-            display: [<Input key="set-label" label={`  ${'Button label'.padEnd(labelWidth)}`} placeholder={DEFAULT_LABEL} value={settings.buttonLabel} submitLabel="save" onSubmit={value => setOption($, 'buttonLabel', value)} />],
+            display: [<Input key="set-label" label={`  ${'Button label'.padEnd(labelWidth)}`} placeholder={DEFAULT_LABEL} value={settings.buttonLabel} submitLabel="save" onSubmit={value => setOption($, 'buttonLabel', value)} />, <Input key="set-weather-city" label={`  ${'Weather city'.padEnd(labelWidth)}`} placeholder="automatic (internet address)" value={settings.weatherCity} submitLabel="save" onSubmit={value => setOption($, 'weatherCity', value)} />],
             music: [<Input key="set-music-file" label={`  ${'Music file'.padEnd(labelWidth)}`} placeholder="built-in tracks" value={settings.musicFile} submitLabel="save" onSubmit={value => setOption($, 'musicFile', value)} />],
             recap: [],
             status: [],

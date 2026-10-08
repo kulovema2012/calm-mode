@@ -772,7 +772,9 @@ function fakeWeather(on: Parameters<typeof start>[1], calls: string[]) {
     calls.push(url)
     const text = url.includes('ipwho.is')
       ? JSON.stringify({ success: true, latitude: 13.75, longitude: 100.5, city: 'Bangkok' })
-      : JSON.stringify({ current: { temperature_2m: 30.6, weather_code: 2, is_day: 1 } })
+      : url.includes('geocoding-api')
+        ? JSON.stringify(url.includes('Nowhereville') ? {} : { results: [{ name: 'Khon Kaen', latitude: 16.44, longitude: 102.83 }] })
+        : JSON.stringify({ current: { temperature_2m: 30.6, weather_code: 2, is_day: 1 } })
     return { value: { status: 200, ok: true, headers: {}, text } } as never
   })
 }
@@ -979,5 +981,47 @@ test('the event and the fallback show one card, with the away time from the even
   await clock.advance(2000)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect((await ui.findAll({ type: 'Text', text: /Welcome back · away 30m/ })).length).toBe(1)
+  await ui.unmount()
+})
+
+// ── Weather city ────────────────────────────────────────────────────────────
+
+test('a typed Weather city is used instead of the internet address', { options: { weatherCity: 'Khon Kaen' } }, async ($, on) => {
+  const calls: string[] = []
+  fakeWeather(on, calls)
+  // No job running, so the 250ms frame timer stays off while the clock jumps ahead.
+  const clock = await start($, on, undefined, false)
+  await clock.advance(10)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /📍 Khon Kaen ⛅ 31°C/ })).toBeDefined()
+  expect(calls.filter(url => url.includes('ipwho.is')).length).toBe(0)
+  // Found once, then kept: the next reading does not search again.
+  await clock.advance(15 * 60_000)
+  expect(calls.filter(url => url.includes('geocoding-api')).length).toBe(1)
+  await ui.unmount()
+})
+
+test('/calm weather city sets the city and shows it right away', async ($, on) => {
+  const calls: string[] = []
+  fakeWeather(on, calls)
+  // No job running, so the 250ms frame timer stays off while the clock jumps ahead.
+  const clock = await start($, on, undefined, false)
+  await clock.advance(10)
+  const reply = await $.command.run({ command: 'calm', args: 'weather city Khon Kaen' } as never)
+  expect(JSON.stringify(reply)).toContain('Khon Kaen')
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /📍 Khon Kaen/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a city that cannot be found shows no weather', { options: { weatherCity: 'Nowhereville' } }, async ($, on) => {
+  const calls: string[] = []
+  fakeWeather(on, calls)
+  // No job running, so the 250ms frame timer stays off while the clock jumps ahead.
+  const clock = await start($, on, undefined, false)
+  await clock.advance(10)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /°C/ })).toBeUndefined()
+  expect(calls.filter(url => url.includes('ipwho.is')).length).toBe(0)
   await ui.unmount()
 })
