@@ -1004,6 +1004,8 @@ async function setCacheMeter($: Engine, isOn: boolean) {
 // "⛅ 31°C" beside the gear. The city comes from the computer's internet address (ipwho.is, looked up at most
 // once an hour), the reading from Open-Meteo every 15 minutes; neither needs an account. On by default; the lookup sends
 // the computer's internet address to ipwho.is, which the README says, and the switch turns it off.
+// Before that guess: a typed Weather city, then on a Mac the real position from Location Services through the
+// optional CoreLocationCLI helper.
 
 const WEATHER_EVERY_MS = 15 * 60_000
 // Your location follows you: an hour old at most, so a new network (a trip, a café) shows within the hour.
@@ -1045,6 +1047,12 @@ async function weatherLocation($: Engine): Promise<{ latitude: number; longitude
   if (saved !== undefined && now - saved.at < LOCATION_FOR_MS) {
     return saved
   }
+  const here = await macLocation($).catch(() => undefined)
+  if (here !== undefined) {
+    const location = { ...here, at: now }
+    await $.store.set(LOCATION_KEY, location)
+    return location
+  }
   const found = await $.http.fetch('https://ipwho.is/')
   if (!found.ok) {
     return saved
@@ -1062,6 +1070,43 @@ async function weatherLocation($: Engine): Promise<{ latitude: number; longitude
  * Where the typed city is, from Open-Meteo's place search, which needs no account; the internet address is not
  * looked up at all. A name with no match says so once and shows no weather until it is changed.
  */
+/** Where Homebrew puts the macOS location helper, tried in order (the first relies on PATH). */
+const MAC_LOCATION_HELPERS = ['CoreLocationCLI', '/opt/homebrew/bin/CoreLocationCLI', '/usr/local/bin/CoreLocationCLI']
+
+/** Turns the helper's "latitude|longitude|city|province" line into a place; blank or "(null)" parts are skipped. */
+export function parseMacLocation(line: string): { latitude: number; longitude: number; city: string } | undefined {
+  const [lat, lon, ...names] = line.trim().split('|')
+  const latitude = Number(lat)
+  const longitude = Number(lon)
+  if (lat === undefined || lon === undefined || lat.trim() === '' || lon.trim() === '') return undefined
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return undefined
+  const city = names.map(name => name.trim()).find(name => name !== '' && name !== '(null)') ?? ''
+  return { latitude, longitude, city }
+}
+
+/**
+ * The Mac's real position from macOS Location Services, through the optional CoreLocationCLI helper
+ * (`brew install corelocationcli`); macOS asks once to allow the terminal app. Undefined on other systems, when the
+ * helper is not installed, or when location is turned off or not allowed, so the internet-address guess is used.
+ */
+async function macLocation($: Engine): Promise<{ latitude: number; longitude: number; city: string } | undefined> {
+  const home = await $.env.get('HOME')
+  if ((await $.env.get('USERPROFILE')) !== undefined || home === undefined || !home.startsWith('/Users/')) {
+    return undefined
+  }
+  for (const helper of MAC_LOCATION_HELPERS) {
+    const ran = await $.process
+      .run([helper, '--format', '%latitude|%longitude|%locality|%subAdministrativeArea|%administrativeArea'], {
+        timeoutMs: 20000,
+      })
+      .catch(() => undefined)
+    if (ran !== undefined && ran.exitCode === 0) {
+      return parseMacLocation(ran.stdout)
+    }
+  }
+  return undefined
+}
+
 async function typedCityLocation(
   $: Engine,
   name: string,

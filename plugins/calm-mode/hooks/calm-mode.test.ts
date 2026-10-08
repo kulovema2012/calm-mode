@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { clampVolume, cleanName, fitChecklist, keepWarmDecision, keepWarmUntil, resumeFromCacheState, weatherSymbol, weatherText, fitRecap, mayPlay, recapLines, stepAwayMinutes, fallbackPoints, parsePoints, wrapText, musicCommand, nextTrack, trackName, windowsMusicScript } from './calm-mode'
+import { clampVolume, cleanName, fitChecklist, keepWarmDecision, keepWarmUntil, resumeFromCacheState, parseMacLocation, weatherSymbol, weatherText, fitRecap, mayPlay, recapLines, stepAwayMinutes, fallbackPoints, parsePoints, wrapText, musicCommand, nextTrack, trackName, windowsMusicScript } from './calm-mode'
 
 /** argv of every player the plugin started in the current test. */
 let spawned: string[][] = []
@@ -1023,5 +1023,67 @@ test('a city that cannot be found shows no weather', { options: { weatherCity: '
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await ui.find({ type: 'Text', text: /°C/ })).toBeUndefined()
   expect(calls.filter(url => url.includes('ipwho.is')).length).toBe(0)
+  await ui.unmount()
+})
+
+// ── macOS location ──────────────────────────────────────────────────────────
+
+test('the macOS helper line becomes a place', () => {
+  expect(parseMacLocation('16.44671|102.833|Khon Kaen|(null)|Khon Kaen\n')).toEqual({ latitude: 16.44671, longitude: 102.833, city: 'Khon Kaen' })
+  expect(parseMacLocation('13.75|100.5|(null)||Bangkok')).toEqual({ latitude: 13.75, longitude: 100.5, city: 'Bangkok' })
+  expect(parseMacLocation('kCLErrorDomain error 1')).toBeUndefined()
+  expect(parseMacLocation('')).toBeUndefined()
+})
+
+/** A Mac: HOME under /Users, and CoreLocationCLI answering (or missing) for every path tried. */
+function fakeMac(on: On, runs: string[][], stdout: string | null) {
+  on('env.get', (_$, e) => ({ value: e.name === 'HOME' ? '/Users/me' : undefined }) as never)
+  on('process.run', (_$, e) => {
+    const argv = [...(e as unknown as { argv: string[] }).argv]
+    runs.push(argv)
+    if (!String(argv[0]).includes('CoreLocationCLI')) return { value: { exitCode: 1, stdout: '', stderr: '' } } as never
+    return (stdout === null
+      ? { value: { exitCode: 127, stdout: '', stderr: 'not found' } }
+      : { value: { exitCode: 0, stdout, stderr: '' } }) as never
+  })
+}
+
+test('on a Mac with the location helper, the weather uses the real position', async ($, on) => {
+  const calls: string[] = []
+  const runs: string[][] = []
+  fakeWeather(on, calls)
+  fakeMac(on, runs, '16.44671|102.833|Khon Kaen|(null)|Khon Kaen\n')
+  const clock = await start($, on, undefined, false)
+  await clock.advance(10)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /📍 Khon Kaen ⛅ 31°C/ })).toBeDefined()
+  expect(calls.filter(url => url.includes('ipwho.is')).length).toBe(0)
+  expect(runs.some(argv => argv[0] === 'CoreLocationCLI')).toBe(true)
+  await ui.unmount()
+})
+
+test('on a Mac without the helper, the internet address is used as before', async ($, on) => {
+  const calls: string[] = []
+  const runs: string[][] = []
+  fakeWeather(on, calls)
+  fakeMac(on, runs, null)
+  const clock = await start($, on, undefined, false)
+  await clock.advance(10)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /📍 Bangkok/ })).toBeDefined()
+  expect(runs.filter(argv => String(argv[0]).includes('CoreLocationCLI')).length).toBe(3)
+  await ui.unmount()
+})
+
+test('a typed city wins over the macOS helper', { options: { weatherCity: 'Khon Kaen' } }, async ($, on) => {
+  const calls: string[] = []
+  const runs: string[][] = []
+  fakeWeather(on, calls)
+  fakeMac(on, runs, '13.75|100.5|Bangkok||Bangkok')
+  const clock = await start($, on, undefined, false)
+  await clock.advance(10)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /📍 Khon Kaen/ })).toBeDefined()
+  expect(runs.some(argv => String(argv[0]).includes('CoreLocationCLI'))).toBe(false)
   await ui.unmount()
 })
