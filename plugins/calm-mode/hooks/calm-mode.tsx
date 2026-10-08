@@ -1048,6 +1048,15 @@ export type PlaceSource = 'typed' | 'mac' | 'ip'
 const MAC_RETRY_MS = 15 * 60_000
 const MAC_TIP_KEY = 'macLocationTipShown'
 
+/**
+ * Whether a saved location can be used without checking again: under an hour old, and saved with its source. One
+ * saved by an older version has no source and could be a guess or the Mac position, so it is checked again at once;
+ * it still stands in if that check finds nothing.
+ */
+export function isLocationFresh(stored: { at: number; source?: PlaceSource } | undefined, now: number): boolean {
+  return stored !== undefined && stored.source !== undefined && now - stored.at < LOCATION_FOR_MS
+}
+
 async function weatherLocation($: Engine): Promise<(Place & { source: PlaceSource }) | undefined> {
   const typed = (await read($, settingsAtom)).weatherCity
   if (typed !== '') {
@@ -1056,9 +1065,8 @@ async function weatherLocation($: Engine): Promise<(Place & { source: PlaceSourc
   }
   const now = await $.clock.now()
   const stored = (await $.store.get(LOCATION_KEY)) as (Place & { at: number; source?: PlaceSource }) | undefined
-  // Saved before this version, a location has no source; those all came from the internet address.
   const saved = stored === undefined ? undefined : { ...stored, source: stored.source ?? 'ip' }
-  if (saved !== undefined && now - saved.at < LOCATION_FOR_MS) {
+  if (saved !== undefined && isLocationFresh(stored, now)) {
     return saved
   }
   // An unexpected error is treated like another system: no Mac retry and no tip.

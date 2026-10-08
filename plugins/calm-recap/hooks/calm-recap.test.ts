@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { cleanTitle, fallbackPoints, fitRecap, keepWarmDecision, keepWarmUntil, parsePoints, resumeFromCacheState, parseMacLocation, recapLines, stepAwayMinutes, toggleLabel, weatherSymbol, weatherText, wrapText } from './calm-recap'
+import { cleanTitle, fallbackPoints, fitRecap, keepWarmDecision, keepWarmUntil, parsePoints, resumeFromCacheState, isLocationFresh, parseMacLocation, recapLines, stepAwayMinutes, toggleLabel, weatherSymbol, weatherText, wrapText } from './calm-recap'
 
 const BAND = {
   plugin: 'calm-recap',
@@ -588,4 +588,14 @@ test('a Mac without the helper keeps its guess for the hour', async ($, on) => {
   await clock.advance(10)
   await clock.advance(15 * 60_000)
   expect(runs.filter(argv => String(argv[0]).includes('CoreLocationCLI')).length).toBe(3)
+})
+
+
+test('a saved location is reused for an hour only when it says where it came from', () => {
+  const now = 10_000_000
+  expect(isLocationFresh({ at: now - 10 * 60_000, source: 'mac' }, now)).toBe(true)
+  expect(isLocationFresh({ at: now - 61 * 60_000, source: 'mac' }, now)).toBe(false)
+  // Saved by an older version: no source, so checked again at once.
+  expect(isLocationFresh({ at: now - 10 * 60_000 }, now)).toBe(false)
+  expect(isLocationFresh(undefined, now)).toBe(false)
 })

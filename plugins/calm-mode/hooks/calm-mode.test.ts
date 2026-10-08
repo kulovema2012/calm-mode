@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { clampVolume, cleanName, fitChecklist, keepWarmDecision, keepWarmUntil, resumeFromCacheState, parseMacLocation, weatherSymbol, weatherText, fitRecap, mayPlay, recapLines, stepAwayMinutes, fallbackPoints, parsePoints, wrapText, musicCommand, nextTrack, trackName, windowsMusicScript } from './calm-mode'
+import { clampVolume, cleanName, fitChecklist, keepWarmDecision, keepWarmUntil, resumeFromCacheState, isLocationFresh, parseMacLocation, weatherSymbol, weatherText, fitRecap, mayPlay, recapLines, stepAwayMinutes, fallbackPoints, parsePoints, wrapText, musicCommand, nextTrack, trackName, windowsMusicScript } from './calm-mode'
 
 /** argv of every player the plugin started in the current test. */
 let spawned: string[][] = []
@@ -1143,4 +1143,13 @@ test('a Mac without the helper gets the location tip once', async ($, on) => {
   await clock.advance(10)
   await clock.advance(60 * 60_000)
   expect(toasts.filter(toast => toast.includes('brew install corelocationcli')).length).toBe(1)
+})
+
+test('a saved location is reused for an hour only when it says where it came from', () => {
+  const now = 10_000_000
+  expect(isLocationFresh({ at: now - 10 * 60_000, source: 'mac' }, now)).toBe(true)
+  expect(isLocationFresh({ at: now - 61 * 60_000, source: 'mac' }, now)).toBe(false)
+  // Saved by an older version: no source, so checked again at once.
+  expect(isLocationFresh({ at: now - 10 * 60_000 }, now)).toBe(false)
+  expect(isLocationFresh(undefined, now)).toBe(false)
 })
