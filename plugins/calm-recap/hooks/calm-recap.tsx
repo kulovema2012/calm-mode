@@ -1049,7 +1049,7 @@ export function parseWindowsLocation(line: string): { latitude: number; longitud
 /**
  * This PC's position from the Windows location service, which needs nothing installed, named with BigDataCloud's
  * free reverse lookup (it receives the coordinates). Undefined on other systems, with location access off, without
- * a fix, or with a fix rougher than 50 km, so the internet-address guess is used. What happened is kept in the plugin
+ * a fix, with a fix rougher than 50 km, or one claiming no error at all, so the internet-address guess is used. What happened is kept in the plugin
  * store as 'windowsLocationCheck'.
  */
 async function windowsLocation($: Engine): Promise<Place | undefined> {
@@ -1068,6 +1068,11 @@ async function windowsLocation($: Engine): Promise<Place | undefined> {
   const fix = ran.exitCode === 0 ? parseWindowsLocation(ran.stdout) : undefined
   if (fix === undefined) {
     await note(ran.exitCode === 3 ? 'location access is off' : `no fix (exit ${String(ran.exitCode)})`)
+    return undefined
+  }
+  // A real fix always has some error; 0 is a made-up position (seen as Nanjing from a PC in Thailand).
+  if (fix.accuracyM <= 0) {
+    await note('no accuracy given, so not trusted')
     return undefined
   }
   if (fix.accuracyM > WINDOWS_ACCURACY_LIMIT_M) {

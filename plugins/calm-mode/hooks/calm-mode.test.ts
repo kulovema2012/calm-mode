@@ -1203,6 +1203,19 @@ test('on Windows a fix rougher than 50 km falls back to the guess', async ($, on
   await ui.unmount()
 })
 
+test('on Windows a fix claiming 0 m accuracy is not trusted', async ($, on) => {
+  const calls: string[] = []
+  const runs: string[][] = []
+  fakeWeather(on, calls)
+  fakeWindows(on, runs, '32.08|118.77|0')
+  const clock = await start($, on, undefined, false)
+  await clock.advance(10)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /📍 Bangkok\? / })).toBeDefined()
+  expect(calls.filter(url => url.includes('bigdatacloud')).length).toBe(0)
+  await ui.unmount()
+})
+
 test('on Windows with location access off, the guess is used', async ($, on) => {
   const calls: string[] = []
   const runs: string[][] = []
