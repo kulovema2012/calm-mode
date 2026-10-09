@@ -1,6 +1,6 @@
 {
   "name": "calm-mode",
-  "version": "0.18.1",
+  "version": "0.19.0",
   "description": "Calm Mode: hides tool calls and shows one friendly checklist above the prompt while Claude works.",
   "author": {
     "name": "Newk"

@@ -91,6 +91,12 @@ export type AwayRecap = {
   /** When the job ended, which is when "away" started; null when a resumed session cannot tell. */
   awaySince: number | null
   isShowing: boolean
+  /** The chat row each point scrolls to (a message id or tool_use_id), by point; null where none was cited. */
+  targets?: Array<string | null>
+  /** Where a point without its own link scrolls: the reply itself. */
+  fallbackTarget?: string | null
+  /** The row of the person's last message, for "You last asked". */
+  askedTarget?: string | null
 }
 
 declare module 'claude-code' {
@@ -107,7 +113,7 @@ declare module 'claude-code' {
       /** One line on the setting changed last, shown under the panel. */
       settingsHint: string | null
       /** The latest weather reading, while the weather is turned on. */
-      weather: { symbol: string; tempC: number; city: string; source?: 'typed' | 'mac' | 'ip' } | null
+      weather: { symbol: string; tempC: number; city: string; source?: 'typed' | 'mac' | 'windows' | 'ip' } | null
       /** Keep-warm for this session. */
       keepWarm: KeepWarm | null
       /** Set once this process has started, to tell a resumed session from a hot reload. */

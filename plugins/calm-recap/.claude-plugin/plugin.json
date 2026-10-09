@@ -1,6 +1,6 @@
 {
   "name": "calm-recap",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "description": "Calm Recap: a Welcome back card when you return to the keyboard, and the prompt cache's hit rate and time left in your status line.",
   "author": {
     "name": "Newk"

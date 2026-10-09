@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { clampVolume, cleanName, fitChecklist, keepWarmDecision, keepWarmUntil, resumeFromCacheState, isLocationFresh, parseMacLocation, weatherSymbol, weatherText, fitRecap, mayPlay, recapLines, stepAwayMinutes, fallbackPoints, parsePoints, wrapText, musicCommand, nextTrack, trackName, windowsMusicScript } from './calm-mode'
+import { clampVolume, cleanName, fitChecklist, keepWarmDecision, keepWarmUntil, resumeFromCacheState, parseWindowsLocation, isLocationFresh, parseMacLocation, weatherSymbol, weatherText, fitRecap, mayPlay, recapLines, stepAwayMinutes, fallbackPoints, parsePoints, parseCitedPoints, findRow, wrapText, musicCommand, nextTrack, trackName, windowsMusicScript } from './calm-mode'
 
 /** argv of every player the plugin started in the current test. */
 let spawned: string[][] = []
@@ -772,6 +772,8 @@ function fakeWeather(on: Parameters<typeof start>[1], calls: string[]) {
     calls.push(url)
     const text = url.includes('ipwho.is')
       ? JSON.stringify({ success: true, latitude: 13.75, longitude: 100.5, city: 'Bangkok' })
+      : url.includes('bigdatacloud')
+        ? JSON.stringify({ city: 'Si Racha', locality: 'Si Racha', principalSubdivision: 'Chon Buri' })
       : url.includes('geocoding-api')
         ? JSON.stringify(url.includes('Nowhereville') ? {} : { results: [{ name: 'Khon Kaen', latitude: 16.44, longitude: 102.83 }] })
         : JSON.stringify({ current: { temperature_2m: 30.6, weather_code: 2, is_day: 1 } })
@@ -1152,4 +1154,111 @@ test('a saved location is reused for an hour only when it says where it came fro
   // Saved by an older version: no source, so checked again at once.
   expect(isLocationFresh({ at: now - 10 * 60_000 }, now)).toBe(false)
   expect(isLocationFresh(undefined, now)).toBe(false)
+})
+
+// ── Windows location ────────────────────────────────────────────────────────
+
+test('the Windows location line becomes a fix', () => {
+  expect(parseWindowsLocation('13.0912|100.9301|50000\r\n')).toEqual({ latitude: 13.0912, longitude: 100.9301, accuracyM: 50000 })
+  expect(parseWindowsLocation('NaN|NaN|0')).toBeUndefined()
+  expect(parseWindowsLocation('')).toBeUndefined()
+})
+
+/** A Windows PC: USERPROFILE set, and PowerShell answering the location script with `stdout` (or failing). */
+function fakeWindows(on: On, runs: string[][], stdout: string, exitCode = 0) {
+  on('env.get', (_$, e) => ({ value: e.name === 'USERPROFILE' ? 'C:\\Users\\me' : undefined }) as never)
+  on('process.run', (_$, e) => {
+    const argv = [...(e as unknown as { argv: string[] }).argv]
+    runs.push(argv)
+    return { value: { exitCode: argv[0] === 'powershell.exe' ? exitCode : 1, stdout, stderr: '' } } as never
+  })
+}
+
+test('on Windows a fix within 50 km names the city without "?"', async ($, on) => {
+  const calls: string[] = []
+  const runs: string[][] = []
+  fakeWeather(on, calls)
+  fakeWindows(on, runs, '13.09|100.93|50000')
+  const clock = await start($, on, undefined, false)
+  await clock.advance(10)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /📍 Si Racha ⛅/ })).toBeDefined()
+  expect(calls.filter(url => url.includes('ipwho.is')).length).toBe(0)
+  expect(runs.some(argv => argv[0] === 'powershell.exe')).toBe(true)
+  await ui.unmount()
+})
+
+test('on Windows a fix rougher than 50 km falls back to the guess', async ($, on) => {
+  const calls: string[] = []
+  const runs: string[][] = []
+  fakeWeather(on, calls)
+  fakeWindows(on, runs, '13.09|100.93|80000')
+  const clock = await start($, on, undefined, false)
+  await clock.advance(10)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /📍 Bangkok\? / })).toBeDefined()
+  expect(calls.filter(url => url.includes('bigdatacloud')).length).toBe(0)
+  await ui.unmount()
+})
+
+test('on Windows with location access off, the guess is used', async ($, on) => {
+  const calls: string[] = []
+  const runs: string[][] = []
+  fakeWeather(on, calls)
+  fakeWindows(on, runs, '', 3)
+  const clock = await start($, on, undefined, false)
+  await clock.advance(10)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /📍 Bangkok\? / })).toBeDefined()
+  await ui.unmount()
+})
+
+// ── Clickable recap ─────────────────────────────────────────────────────────
+
+test('cited points keep their step numbers apart from the text', () => {
+  expect(parseCitedPoints('- Made the cards blue [2]\n- Needs you: send the logo [3].\n- Checked it')).toEqual({
+    points: ['Made the cards blue', 'Needs you: send the logo', 'Checked it'],
+    refs: [2, 3, null],
+  })
+  expect(parsePoints('- Made the cards blue [2]')).toEqual(['Made the cards blue'])
+})
+
+test('a chat row is found again by how its text starts', () => {
+  const rows = [
+    { kind: 'user' as const, requestId: 'u1', text: 'make the pricing cards blue' },
+    { kind: 'assistant' as const, requestId: 'a1', text: 'Made the pricing cards blue.' },
+  ]
+  expect(findRow(rows, 'assistant', 'Made the pricing cards blue. The footer still needs your logo.')).toBe('a1')
+  expect(findRow(rows, 'user', 'make the pricing cards blue')).toBe('u1')
+  expect(findRow(rows, 'assistant', 'Something else entirely')).toBeNull()
+})
+
+test('each recap point ends in ↗, and pressing it tries to scroll the chat there', async ($, on) => {
+  const reply = 'Made the pricing cards blue. The footer still needs your logo.'
+  on('session.messages', () => ({
+    value: [
+      { role: 'user', text: 'make the pricing cards blue', toolUses: [] },
+      { role: 'assistant', text: reply, toolUses: [] },
+    ],
+  }) as never)
+  // What Claude Code draws beneath the plugin for a message row.
+  on('ui.render', { component: 'AssistantMessage' }, ($, e) => ($.ui.resolve(e) as unknown as { Box: (props: object) => never }).Box({}))
+  on('ui.render', { component: 'UserMessage' }, ($, e) => ($.ui.resolve(e) as unknown as { Box: (props: object) => never }).Box({}))
+  const clock = await start($, on, undefined, false)
+  const row = await $.ui.mount({ plugin: 'calm-mode', component: 'AssistantMessage', requestId: 'msg-1', surface: 'terminal', props: { text: reply, isFirstOfReply: true } } as never)
+  await row.unmount()
+  const asked = await $.ui.mount({ plugin: 'calm-mode', component: 'UserMessage', requestId: 'msg-0', surface: 'terminal', props: { text: 'make the pricing cards blue' } } as never)
+  await asked.unmount()
+  await $.command.run({ command: 'calm', args: 'recap' } as never)
+  await clock.advance(10)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  const keys: string[] = []
+  for (let i = 0; i < 20; i++) {
+    if ((await ui.find({ key: `recap-go-${i}` })) !== undefined) keys.push(`recap-go-${i}`)
+  }
+  expect(keys.length >= 2).toBe(true)
+  await ui.press({ key: keys[0] ?? '' })
+  // The test engine has no chat to scroll, so the press tries and says it could not.
+  expect(toasts.filter(toast => toast.includes('could not scroll there')).length).toBe(1)
+  await ui.unmount()
 })

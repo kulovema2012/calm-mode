@@ -784,30 +784,147 @@ export function fallbackPoints(answer: string): string[] {
 
 /** Haiku's "- point" lines as clean points; a "Needs you:" prefix is kept for the card to highlight. */
 export function parsePoints(reply: string): string[] {
-  return reply
-    .split('\n')
-    .map(line => line.replace(/^\s*(?:[-•*]|\d+[.)])\s*/, '').trim())
-    .filter(line => line.length > 0)
-    .slice(0, POINT_LIMIT)
-    .map(clip)
+  return parseCitedPoints(reply).points
 }
 
-async function summarize($: Engine, answer: string): Promise<string[] | undefined> {
+async function summarize(
+  $: Engine,
+  answer: string,
+  steps: readonly RecapStep[] = [],
+): Promise<{ points: string[]; targets: Array<string | null> } | undefined> {
   if (answer.trim() === '') {
     return undefined
   }
+  const cites = steps.length > 0
   const reply = await $.model.complete({
     model: 'haiku',
-    maxTokens: 160,
+    maxTokens: 200,
     timeoutMs: 20000,
     system:
       'Summarize what the assistant did or said for a non-technical person as 1 to 3 lines, each starting with "- ". ' +
       'Each line at most 12 plain words. If the person must do or decide something, make that the last line and ' +
-      'start it with "Needs you: ". No code, no file paths, no markdown other than the dashes.',
-    prompt: answer.slice(0, 4000),
+      'start it with "Needs you: ". No code, no file paths, no markdown other than the dashes.' +
+      (cites ? ' End each line with the number of the step below it is mostly about, in square brackets, like [3].' : ''),
+    prompt: cites
+      ? `Steps:\n${steps.map((step, i) => `[${i + 1}] ${step.label}`).join('\n')}\n\nThe assistant's reply:\n${answer.slice(0, 4000)}`
+      : answer.slice(0, 4000),
   })
-  const points = reply.isAnswered ? parsePoints(reply.text) : []
-  return points.length > 0 ? points : undefined
+  const { points, refs } = reply.isAnswered ? parseCitedPoints(reply.text) : { points: [], refs: [] }
+  if (points.length === 0) {
+    return undefined
+  }
+  return { points, targets: refs.map(ref => (ref === null ? null : (steps[ref - 1]?.target ?? null))) }
+}
+
+// ── Recap links ─────────────────────────────────────────────────────────────
+// Each recap point can scroll the chat back to the step it is about: Haiku cites a numbered list of the last
+// turn's steps (what Claude said, each tool it used), and a step is found again by its row in the transcript: a
+// tool row by its tool_use_id, a message row by the id its drawing carried, remembered here as rows are drawn.
+
+type ChatRow = { kind: 'user' | 'assistant'; requestId: string; text: string }
+
+/** Message rows as the transcript drew them, newest last. */
+const chatRows: ChatRow[] = []
+const CHAT_ROWS_KEPT = 400
+
+/** One step of the last turn, as Haiku sees it, and the chat row it scrolls to. */
+export type RecapStep = { label: string; target: string | null }
+
+/** Where the card's links point: a step per point once Haiku cites them, else the reply itself. */
+export type RecapLinks = { steps: RecapStep[]; fallbackTarget: string | null; askedTarget: string | null }
+
+function rememberRow(kind: ChatRow['kind'], requestId: string, text: string) {
+  const known = chatRows.findIndex(row => row.requestId === requestId)
+  if (known >= 0) {
+    chatRows.splice(known, 1)
+  }
+  chatRows.push({ kind, requestId, text })
+  if (chatRows.length > CHAT_ROWS_KEPT) {
+    chatRows.splice(0, chatRows.length - CHAT_ROWS_KEPT)
+  }
+}
+
+const flat = (text: string) => text.replace(/\s+/g, ' ').trim()
+
+/** The newest drawn row of `kind` that starts the way `text` does (a reply's first block, a prompt as typed). */
+export function findRow(rows: readonly ChatRow[], kind: ChatRow['kind'], text: string): string | null {
+  const head = flat(text).slice(0, 40)
+  if (head === '') return null
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const row = rows[i]
+    if (row === undefined || row.kind !== kind) continue
+    const start = flat(row.text).slice(0, 40)
+    if (start !== '' && (start.startsWith(head) || head.startsWith(start))) return row.requestId
+  }
+  return null
+}
+
+function toolDetail(input: Record<string, unknown>): string {
+  const detail = [input.description, input.file_path, input.command, input.pattern, input.url, input.query].find(
+    value => typeof value === 'string' && value.trim() !== '',
+  )
+  return detail === undefined ? '' : flat(String(detail)).slice(0, 60)
+}
+
+/** The last turn's steps, newest last and at most 30, plus where "You last asked" and an uncited point lead. */
+async function recapLinks($: Engine): Promise<RecapLinks> {
+  const messages = await $.session.messages()
+  let start = -1
+  messages.forEach((message, i) => {
+    if (message.role === 'user' && isPersonText(message.text)) start = i
+  })
+  const steps: RecapStep[] = []
+  for (const message of messages.slice(start + 1)) {
+    if (message.role !== 'assistant') continue
+    if (message.text.trim() !== '') {
+      steps.push({ label: `Said: ${flat(message.text).slice(0, 100)}`, target: findRow(chatRows, 'assistant', message.text) })
+    }
+    for (const use of message.toolUses) {
+      const detail = toolDetail(use.input)
+      steps.push({ label: detail === '' ? use.tool : `${use.tool}: ${detail}`, target: use.tool_use_id })
+    }
+  }
+  const said = [...steps].reverse().find(step => step.label.startsWith('Said: ') && step.target !== null)
+  const asked = start >= 0 ? messages[start] : undefined
+  return {
+    steps: steps.slice(-30),
+    fallbackTarget: said?.target ?? null,
+    askedTarget: asked === undefined ? null : findRow(chatRows, 'user', asked.text),
+  }
+}
+
+/** Haiku's "- point [3]" lines: the points, cleaned, and the step each cites (1-based), or null. */
+export function parseCitedPoints(reply: string): { points: string[]; refs: Array<number | null> } {
+  const points: string[] = []
+  const refs: Array<number | null> = []
+  for (const raw of reply.split('\n')) {
+    let line = raw.replace(/^\s*(?:[-•*]|\d+[.)])\s*/, '').trim()
+    const cited = /\s*\[(\d+)\]\s*\.?$/.exec(line)
+    if (cited !== null) {
+      line = line.slice(0, cited.index).trim()
+    }
+    if (line.length === 0 || points.length >= POINT_LIMIT) continue
+    points.push(clip(line))
+    refs.push(cited === null ? null : Number(cited[1]))
+  }
+  return { points, refs }
+}
+
+/** Scrolls the chat to the first of `targets` it can reach; the pane closes first so the chat shows. */
+async function jumpTo($: Engine, targets: ReadonlyArray<string | null | undefined>) {
+  if ((await read($, settingsAtom)).recapStyle === 'pane') {
+    await $.ui.close({ id: RECAP_PANE }).catch(() => undefined)
+  }
+  let why = 'that part of the chat is no longer on screen'
+  for (const requestId of new Set(targets)) {
+    if (typeof requestId !== 'string') continue
+    const moved = await $.ui
+      .scroll({ to: { requestId }, block: 'start' })
+      .catch((error: unknown) => ({ deny: String(error instanceof Error ? error.message : error) }))
+    if (moved.deny === undefined) return
+    why = moved.deny
+  }
+  $.ui.toast(`Calm Mode: could not scroll there (${why})`)
 }
 
 /** Shows the card, keeps "away 18m" current, then swaps in Haiku's points when they arrive. */
@@ -823,15 +940,20 @@ async function presentRecap($: Engine, recap: AwayRecap, answer: string) {
     void update($, tickAtom, n => (n ?? 0) + 1)
   })
   // The card is up now; Haiku's points replace the stand-in whenever they arrive.
-  void summarize($, answer)
-    .then(points =>
-      points === undefined
-        ? undefined
-        : update($, recapAtom, current =>
-            current !== null && current.jobId === recap.jobId ? { ...current, points } : current,
-          ),
+  void (async () => {
+    const links = await recapLinks($).catch((): RecapLinks => ({ steps: [], fallbackTarget: null, askedTarget: null }))
+    await update($, recapAtom, current =>
+      current !== null && current.jobId === recap.jobId
+        ? { ...current, fallbackTarget: links.fallbackTarget, askedTarget: links.askedTarget }
+        : current,
     )
-    .catch(() => undefined)
+    const summary = await summarize($, answer, links.steps)
+    if (summary !== undefined) {
+      await update($, recapAtom, current =>
+        current !== null && current.jobId === recap.jobId ? { ...current, points: summary.points, targets: summary.targets } : current,
+      )
+    }
+  })().catch(() => undefined)
 }
 
 /** Fires once the person has been quiet for the set minutes after a job. */
@@ -1041,8 +1163,8 @@ export function weatherText(weather: { symbol: string; tempC: number; city?: str
 
 type Place = { latitude: number; longitude: number; city: string }
 
-/** Where the weather's city came from: typed in, the Mac's Location Services, or a guess from the internet address. */
-export type PlaceSource = 'typed' | 'mac' | 'ip'
+/** Where the weather's city came from: typed in, the Mac's or Windows' location service, or a guess from the internet address. */
+export type PlaceSource = 'typed' | 'mac' | 'windows' | 'ip'
 
 /** A Mac whose location helper is installed but failed tries again this soon, instead of keeping a guess an hour. */
 const MAC_RETRY_MS = 15 * 60_000
@@ -1078,6 +1200,14 @@ async function weatherLocation($: Engine): Promise<(Place & { source: PlaceSourc
   }
   if (mac === 'missing') {
     await showMacLocationTip($)
+  }
+  if (mac === 'not-mac') {
+    const pc = await windowsLocation($).catch(() => undefined)
+    if (pc !== undefined) {
+      const location = { ...pc, source: 'windows' as const, at: now }
+      await $.store.set(LOCATION_KEY, location)
+      return location
+    }
   }
   const found = await $.http.fetch('https://ipwho.is/')
   if (!found.ok) {
@@ -1156,6 +1286,83 @@ async function macLocation($: Engine): Promise<Place | 'not-mac' | 'missing' | '
   }
   await $.store.set(MAC_CHECK_KEY, { at: await $.clock.now(), tries }).catch(() => undefined)
   return isInstalled ? 'failed' : 'missing'
+}
+
+/** Fixes rougher than this (in meters) are not trusted, and the internet-address guess is used instead. */
+const WINDOWS_ACCURACY_LIMIT_M = 50_000
+const WINDOWS_CHECK_KEY = 'windowsLocationCheck'
+
+/**
+ * Windows PowerShell asking the Windows location service once: "latitude|longitude|accuracy in meters", exit 2 with
+ * no fix in 15 seconds, exit 3 when location access is turned off for apps.
+ */
+const WINDOWS_LOCATION_SCRIPT = [
+  'Add-Type -AssemblyName System.Device',
+  "$w = New-Object System.Device.Location.GeoCoordinateWatcher('High')",
+  '$w.Start()',
+  '$i = 0',
+  "while ($w.Position.Location.IsUnknown -and $w.Permission -ne 'Denied' -and $i -lt 30) { Start-Sleep -Milliseconds 500; $i++ }",
+  '$l = $w.Position.Location',
+  "$denied = $w.Permission -eq 'Denied'",
+  '$w.Stop()',
+  'if ($denied) { exit 3 }',
+  'if ($l.IsUnknown) { exit 2 }',
+  "$c = [Globalization.CultureInfo]::InvariantCulture",
+  "'{0}|{1}|{2}' -f $l.Latitude.ToString($c), $l.Longitude.ToString($c), [math]::Round($l.HorizontalAccuracy)",
+].join('; ')
+
+/** Turns the script's "latitude|longitude|accuracy" line into a fix. */
+export function parseWindowsLocation(line: string): { latitude: number; longitude: number; accuracyM: number } | undefined {
+  const [lat, lon, acc] = line.trim().split('|').map(part => part.trim())
+  if (lat === undefined || lon === undefined || acc === undefined || lat === '' || lon === '' || acc === '') return undefined
+  const latitude = Number(lat)
+  const longitude = Number(lon)
+  const accuracyM = Number(acc)
+  if (![latitude, longitude, accuracyM].every(Number.isFinite)) return undefined
+  return { latitude, longitude, accuracyM }
+}
+
+/**
+ * This PC's position from the Windows location service, which needs nothing installed, named with BigDataCloud's
+ * free reverse lookup (it receives the coordinates). Undefined on other systems, with location access off, without
+ * a fix, or with a fix rougher than 50 km, so the internet-address guess is used. What happened is kept in the plugin
+ * store as 'windowsLocationCheck'.
+ */
+async function windowsLocation($: Engine): Promise<Place | undefined> {
+  if ((await $.env.get('USERPROFILE')) === undefined) {
+    return undefined
+  }
+  const now = await $.clock.now()
+  const note = (result: string) => $.store.set(WINDOWS_CHECK_KEY, { at: now, result }).catch(() => undefined)
+  const ran = await $.process
+    .run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', WINDOWS_LOCATION_SCRIPT], { timeoutMs: 25000 })
+    .catch((error: unknown) => String(error instanceof Error ? error.message : error).slice(0, 200))
+  if (typeof ran === 'string') {
+    await note(`failed to run: ${ran}`)
+    return undefined
+  }
+  const fix = ran.exitCode === 0 ? parseWindowsLocation(ran.stdout) : undefined
+  if (fix === undefined) {
+    await note(ran.exitCode === 3 ? 'location access is off' : `no fix (exit ${String(ran.exitCode)})`)
+    return undefined
+  }
+  if (fix.accuracyM > WINDOWS_ACCURACY_LIMIT_M) {
+    await note(`too rough: ${Math.round(fix.accuracyM / 1000)} km`)
+    return undefined
+  }
+  const named = await $.http
+    .fetch(
+      'https://api.bigdatacloud.net/data/reverse-geocode-client' +
+        `?latitude=${fix.latitude}&longitude=${fix.longitude}&localityLanguage=en`,
+    )
+    .catch(() => undefined)
+  const place =
+    named !== undefined && named.ok
+      ? (JSON.parse(named.text) as { city?: string; locality?: string; principalSubdivision?: string })
+      : {}
+  const city = [place.city, place.locality, place.principalSubdivision].find(name => (name ?? '').trim() !== '') ?? ''
+  await note(`found ${city === '' ? 'a position' : city} within ${Math.round(fix.accuracyM / 1000)} km`)
+  return { latitude: fix.latitude, longitude: fix.longitude, city }
 }
 
 /**
@@ -1465,7 +1672,8 @@ export const RECAP_PANE = 'calm-recap'
 
 export type LineKind = 'divider' | 'status' | 'heading' | 'point' | 'askedHeading' | 'asked' | 'stepsHeading' | 'step'
 
-export type RecapLine = { kind: LineKind; text: string; color?: string; isBold?: boolean; isDim?: boolean }
+/** `target`: the chat row a linked line scrolls to; it ends in a ↗ (the last line of a point or of "You last asked"). */
+export type RecapLine = { kind: LineKind; text: string; color?: string; isBold?: boolean; isDim?: boolean; target?: string }
 
 /** Every line of the recap at `width` columns; `steps` adds the job's steps (the pane has room for them). */
 export function recapLines(
@@ -1509,15 +1717,19 @@ export function recapLines(
         text: `${icon}${recap.title}${theme.sep}${outcome}${recap.stepsTotal > 0 ? `${theme.sep}${recap.stepsDone}/${recap.stepsTotal} steps` : ''}`,
         color: recap.phase === 'done' ? theme.done : theme.warn,
       }
-  const points = recap.points.flatMap(point => {
+  const points = recap.points.flatMap((point, index) => {
     const needsYou = NEEDS_YOU.test(point)
     const text = needsYou ? `Needs you: ${point.replace(NEEDS_YOU, '')}` : point
-    return wrapText(text, textWidth).map(
+    // A linked point leaves room for its ↗ on the last line.
+    const target = recap.targets?.[index] ?? recap.fallbackTarget ?? undefined
+    const wrapped = wrapText(text, target === undefined ? textWidth : textWidth - 2)
+    return wrapped.map(
       (line, i): RecapLine => ({
         kind: 'point',
         text: `${i === 0 ? (needsYou ? '  ➜ ' : '  • ') : '    '}${line}`,
         color: needsYou ? theme.warn : undefined,
         isBold: needsYou && i === 0,
+        ...(target !== undefined && i === wrapped.length - 1 ? { target } : {}),
       }),
     )
   })
@@ -1531,9 +1743,16 @@ export function recapLines(
   }
   if (recap.lastAsked !== '') {
     lines.push(rule, heading('askedHeading', 'You last asked'))
-    for (const line of wrapText(`“${recap.lastAsked}”`, textWidth)) {
-      lines.push({ kind: 'asked', text: `    ${line}`, isDim: true })
-    }
+    const askedTarget = recap.askedTarget ?? undefined
+    const asked = wrapText(`“${recap.lastAsked}”`, askedTarget === undefined ? textWidth : textWidth - 2)
+    asked.forEach((line, i) => {
+      lines.push({
+        kind: 'asked',
+        text: `    ${line}`,
+        isDim: true,
+        ...(askedTarget !== undefined && i === asked.length - 1 ? { target: askedTarget } : {}),
+      })
+    })
   }
   return lines
 }
@@ -2006,6 +2225,17 @@ export function registerCalmMode(on: On, options?: unknown): void {
     return next({ ...e, props: { ...e.props, hint: '' } })
   })
 
+  // The chat's message rows, remembered as they are drawn so a recap point can scroll back to one.
+  on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
+    rememberRow('assistant', e.requestId, e.props.text)
+    return next(e)
+  })
+
+  on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
+    rememberRow('user', e.requestId, e.props.text)
+    return next(e)
+  })
+
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) {
       return next(e)
@@ -2201,9 +2431,19 @@ export function registerCalmMode(on: On, options?: unknown): void {
         <Box flexDirection="column" width={columns} key={`recap-${recapTick}`}>
           {recapHeader}
           {lines.map((line, i) => (
-            <Text key={`recap-line-${i}`} wrap="truncate" color={line.color} bold={line.isBold} dimColor={line.isDim}>
-              {line.text}
-            </Text>
+            line.target === undefined ? (
+              <Text key={`recap-line-${i}`} wrap="truncate" color={line.color} bold={line.isBold} dimColor={line.isDim}>
+                {line.text}
+              </Text>
+            ) : (
+              <Box key={`recap-line-${i}`} flexDirection="row">
+                <Text wrap="truncate" color={line.color} bold={line.isBold} dimColor={line.isDim}>
+                  {line.text}
+                </Text>
+                <Text> </Text>
+                <Button key={`recap-go-${i}`} label="↗" plain onPress={() => void jumpTo($, [line.target, recap.fallbackTarget])} />
+              </Box>
+            )
           ))}
           <Box flexDirection="row" justifyContent="flex-end" width={columns}>
             {gotIt}
@@ -2379,9 +2619,19 @@ export function registerCalmMode(on: On, options?: unknown): void {
           {`↩ ${theme.shout('Welcome back')}${recap.awaySince === null ? '' : `${theme.sep}away ${theme.duration(now - recap.awaySince)}`}`}
         </Text>
         {lines.map((line, i) => (
-          <Text key={`pane-line-${i}`} wrap="truncate" color={line.color} bold={line.isBold} dimColor={line.isDim}>
-            {line.text}
-          </Text>
+          line.target === undefined ? (
+              <Text key={`pane-line-${i}`} wrap="truncate" color={line.color} bold={line.isBold} dimColor={line.isDim}>
+                {line.text}
+              </Text>
+            ) : (
+              <Box key={`pane-line-${i}`} flexDirection="row">
+                <Text wrap="truncate" color={line.color} bold={line.isBold} dimColor={line.isDim}>
+                  {line.text}
+                </Text>
+                <Text> </Text>
+                <Button key={`pane-go-${i}`} label="↗" plain onPress={() => void jumpTo($, [line.target, recap.fallbackTarget])} />
+              </Box>
+            )
         ))}
         <Box flexDirection="row" justifyContent="flex-end" width={width}>
           <Button key="recap-pane-ok" label="Got it" variant="primary" onPress={() => dismissRecap($)} />
