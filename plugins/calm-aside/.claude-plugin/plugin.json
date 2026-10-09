@@ -1,0 +1,42 @@
+{
+  "name": "calm-aside",
+  "version": "0.1.0",
+  "description": "Calm Aside: a read-only side chat. /aside opens a pane where you ask about the session so far; a tool-less fork of the session answers, and nothing goes back into the main chat.",
+  "author": {
+    "name": "Newk"
+  },
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "cyberpunk": {
+      "type": "boolean",
+      "title": "Cyberpunk theme",
+      "description": "Neon pink titles, cyan accents and yellow alerts, like Calm Mode's Cyberpunk theme.",
+      "default": false
+    },
+    "showCost": {
+      "type": "boolean",
+      "title": "Show cost line",
+      "description": "Under each answer, a dim line with how long it took and the tokens it read from the cache, added and wrote.",
+      "default": true
+    },
+    "liveFallback": {
+      "type": "boolean",
+      "title": "Answer before the first reply",
+      "description": "Before Claude has answered once there is nothing to fork. On: answer at once from the chat's text with a small model (not cached, marked 'quick'). Off: wait and answer when Claude's reply ends.",
+      "default": true
+    },
+    "liveModel": {
+      "type": "string",
+      "title": "Model for quick answers",
+      "description": "The model for quick answers before the first reply (a --model value). Fork answers always use the session's model.",
+      "default": "haiku"
+    },
+    "maxHistory": {
+      "type": "number",
+      "title": "Side questions kept",
+      "description": "How many earlier side questions and answers are shown and sent along with each new question (1 to 50).",
+      "default": 8
+    }
+  }
+}

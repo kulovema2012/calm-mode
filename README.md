@@ -61,6 +61,14 @@ The part after `@` is the marketplace's name. Install one of the two, not both: 
 /plugin install calm-recap --marketplace kulovema2012/calm-mode
 ```
 
+## A side chat that Claude never sees
+
+**[Calm Aside](plugins/calm-aside/README.md)** is a third plugin: `/aside which files has it changed?` opens a pane beside the chat and answers from a hidden, tool-less copy of the session, so you can ask while Claude works without interrupting it or steering it. It cannot touch your files and draws only its own pane, so it works next to Calm Mode or Calm Recap:
+
+```
+/plugin install calm-aside@calm-mode
+```
+
 ## Turn it on and off
 
 - Click the **[ 🍃 Calm Mode ● ]** button at the right of the band above the prompt, or
@@ -199,8 +207,8 @@ The same settings appear in `/config` under Calm Mode, and the two always agree.
 
 ## For developers
 
-- The repository is a marketplace of two plugins: `plugins/calm-mode` and `plugins/calm-recap`, listed in `.claude-plugin/marketplace.json`.
-- In each, `hooks/register.tsx` is the entry point and `types/index.d.ts` types the shared state (under the `calm-mode` and `calm-recap` keys).
+- The repository is a marketplace of three plugins: `plugins/calm-mode`, `plugins/calm-recap` and `plugins/calm-aside`, listed in `.claude-plugin/marketplace.json`.
+- In each, `hooks/register.tsx` is the entry point and `types/index.d.ts` types the shared state (under the `calm-mode`, `calm-recap` and `calm-aside` keys).
 - Test and check each plugin from its own folder: `claude plugin test plugins/calm-mode`, `claude plugin validate plugins/calm-recap`, and `claude plugin validate .` for the marketplace.
 - `statusline/` is the same in both plugins; change both together.
 
