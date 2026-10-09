@@ -146,7 +146,8 @@ test('pane style keeps one line with Open recap; the pane holds the card', { opt
     { role: 'user', text: 'make the pricing cards blue' },
     { role: 'assistant', text: ANSWER },
   ])
-  await $.command.run({ command: 'recap', args: '' } as never)
+  const shown = await $.command.run({ command: 'recap', args: '' } as never)
+  expect(shown.text).toBe('Showing the Welcome back card in a pane.')
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await band.find({ key: 'recap-open' })).toBeDefined()
   expect(await band.find({ type: 'Text', text: /What Claude did/ })).toBeUndefined()

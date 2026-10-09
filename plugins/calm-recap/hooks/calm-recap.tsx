@@ -612,6 +612,13 @@ export function parseCitedPoints(reply: string): { points: string[]; refs: Array
   return { points, refs }
 }
 
+/** What the recap command answers: where the card shows, as the Recap style setting puts it. */
+async function shownWhere($: Engine): Promise<string> {
+  return (await read($, settingsAtom)).recapStyle === 'pane'
+    ? 'Showing the Welcome back card in a pane.'
+    : 'Showing the Welcome back card above the prompt.'
+}
+
 /**
  * Scrolls the chat to the first of `targets` it can reach; the pane closes after, so the chat shows.
  *
@@ -1275,7 +1282,7 @@ export function registerCalmRecap(on: On, options?: unknown): void {
       return { text: 'Calm Recap is off. Type /recap on first.' }
     }
     await showRecap($, { turnId: `now-${await $.clock.now()}` })
-    return { text: 'Showing the Welcome back card above the prompt.' }
+    return { text: await shownWhere($) }
   })
 
   on('turn.start', async ($, e, next) => {

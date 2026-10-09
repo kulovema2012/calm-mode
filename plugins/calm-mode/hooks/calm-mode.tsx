@@ -910,6 +910,13 @@ export function parseCitedPoints(reply: string): { points: string[]; refs: Array
   return { points, refs }
 }
 
+/** What the recap command answers: where the card shows, as the Recap style setting puts it. */
+async function shownWhere($: Engine): Promise<string> {
+  return (await read($, settingsAtom)).recapStyle === 'pane'
+    ? 'Showing the Welcome back card in a pane.'
+    : 'Showing the Welcome back card above the prompt.'
+}
+
 /**
  * Scrolls the chat to the first of `targets` it can reach; the pane closes after, so the chat shows.
  *
@@ -1904,7 +1911,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
     }
     if (arg === 'recap') {
       await showRecapNow($)
-      return { text: 'Showing the Welcome back card above the prompt.' }
+      return { text: await shownWhere($) }
     }
     const isEnabled = arg === 'on' ? true : arg === 'off' ? false : !(await read($, enabledAtom))
     await setEnabled($, isEnabled)
