@@ -41,6 +41,8 @@ export type Recap = {
   lastAsked: string
   /** When Claude answered, which is when "away" started; null when a resumed session cannot tell. */
   awaySince: number | null
+  /** Shown because the person asked (the recap command), not after time away: headed "Recap", no "away". */
+  isAsked?: boolean
   isShowing: boolean
   /** Rebuilt from the saved conversation after `claude --resume`. */
   isResumed: boolean

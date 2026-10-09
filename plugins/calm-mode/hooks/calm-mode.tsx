@@ -913,8 +913,8 @@ export function parseCitedPoints(reply: string): { points: string[]; refs: Array
 /** What the recap command answers: where the card shows, as the Recap style setting puts it. */
 async function shownWhere($: Engine): Promise<string> {
   return (await read($, settingsAtom)).recapStyle === 'pane'
-    ? 'Showing the Welcome back card in a pane.'
-    : 'Showing the Welcome back card above the prompt.'
+    ? 'Showing the recap in a pane.'
+    : 'Showing the recap above the prompt.'
 }
 
 /**
@@ -953,12 +953,17 @@ function jumpTo($: Engine, targets: ReadonlyArray<string | null | undefined>): P
   })()
 }
 
+/** The card's heading: "Welcome back" after time away, plain "Recap" when the person asked for it. */
+function recapHeading(recap: { isAsked?: boolean } | null): string {
+  return recap?.isAsked === true ? 'Recap' : 'Welcome back'
+}
+
 /** Shows the card, keeps "away 18m" current, then swaps in Haiku's points when they arrive. */
 async function presentRecap($: Engine, recap: AwayRecap, answer: string) {
   await update($, recapAtom, () => recap)
   if ((await read($, settingsAtom)).recapStyle === 'pane') {
     // Unasked, Claude Code seats a pane only on a wide terminal; the band's "Open recap" seats it anywhere.
-    void $.ui.open({ id: RECAP_PANE, title: 'Welcome back' }).catch(() => undefined)
+    void $.ui.open({ id: RECAP_PANE, title: recapHeading(recap) }).catch(() => undefined)
   }
   // One redraw a minute, never an animation.
   runtime.recapTicker?.cancel()
@@ -1034,6 +1039,7 @@ async function showRecapNow($: Engine) {
       points: fallbackPoints(answer),
       lastAsked: asked,
       awaySince: list?.finishedAt ?? now,
+      isAsked: true,
       isShowing: true,
       isResumed: false,
       isCacheCold: false,
@@ -1881,7 +1887,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
     })
     await $.command.register({
       name: 'calm',
-      description: 'Turn Calm Mode on or off (no argument flips it); recap shows the Welcome back card; statusline on|off adds the cache meter',
+      description: 'Turn Calm Mode on or off (no argument flips it); recap shows the recap card; statusline on|off adds the cache meter',
       argumentHint: '[on|off] | recap | statusline on|off | keepwarm on|off|3h|until 18:00 | weather city <name>',
       immediate: true,
     })
@@ -2419,13 +2425,13 @@ export function registerCalmMode(on: On, options?: unknown): void {
     const settingsRows = isSettingsOpen ? 2 + tabRows[tab].length + tabInputs[tab].length + (hint === null ? 0 : 1) : 0
 
     if (recap !== null && recap.isShowing) {
-      const awayFor = recap.awaySince === null ? '' : `${theme.sep}away ${theme.duration(now - recap.awaySince)}`
+      const awayFor = recap.awaySince === null || recap.isAsked === true ? '' : `${theme.sep}away ${theme.duration(now - recap.awaySince)}`
       const recapTick = await read($, tickAtom)
       const recapHeader = (
         <Box flexDirection="row" justifyContent="space-between" width={columns}>
           <Box width={headerRoom}>
             <Text wrap="truncate" bold color={theme.title ?? theme.accent}>
-              {`↩ ${theme.shout('Welcome back')}${awayFor}`}
+              {`↩ ${theme.shout(recapHeading(recap))}${awayFor}`}
             </Text>
           </Box>
           {buttons}
@@ -2442,7 +2448,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
               <Button
                 key="recap-open"
                 label="Open recap"
-                onPress={() => $.ui.open({ id: RECAP_PANE, title: 'Welcome back' })}
+                onPress={() => $.ui.open({ id: RECAP_PANE, title: recapHeading(recap) })}
               />
               <Text> </Text>
               {gotIt}
@@ -2644,7 +2650,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
     return (
       <Box flexDirection="column" width={width}>
         <Text bold color={theme.title ?? theme.accent} wrap="truncate">
-          {`↩ ${theme.shout('Welcome back')}${recap.awaySince === null ? '' : `${theme.sep}away ${theme.duration(now - recap.awaySince)}`}`}
+          {`↩ ${theme.shout(recapHeading(recap))}${recap.awaySince === null || recap.isAsked === true ? '' : `${theme.sep}away ${theme.duration(now - recap.awaySince)}`}`}
         </Text>
         {lines.map((line, i) => (
           line.target === undefined ? (

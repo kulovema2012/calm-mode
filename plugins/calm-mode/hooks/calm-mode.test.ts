@@ -576,7 +576,7 @@ test('sections of the Welcome back card are split by thin rules', async ($, on) 
   await ui.unmount()
 })
 
-test('/calm recap shows the Welcome back card right away', async ($, on) => {
+test('/calm recap shows the card headed Recap, with no away time', async ($, on) => {
   on('session.messages', () => ({
     value: [
       { role: 'user', text: 'make the pricing cards blue', toolUses: [] },
@@ -585,9 +585,10 @@ test('/calm recap shows the Welcome back card right away', async ($, on) => {
   }) as never)
   await start($, on)
   const ran = await $.command.run({ command: 'calm', args: 'recap' } as never)
-  expect(ran.text).toBe('Showing the Welcome back card above the prompt.')
+  expect(ran.text).toBe('Showing the recap above the prompt.')
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await ui.find({ type: 'Text', text: /Welcome back/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^↩ Recap$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Welcome back|away/ })).toBeUndefined()
   // this session's own last request wins over the saved one
   expect(await ui.find({ type: 'Text', text: /Build my landing page/ })).toBeDefined()
   await ui.unmount()
@@ -679,7 +680,7 @@ test('pane style: the band keeps one line with Open recap', { options: { recapSt
   on('session.messages', () => ({ value: [{ role: 'assistant', text: 'Done.', toolUses: [] }] }) as never)
   await start($, on)
   const ran = await $.command.run({ command: 'calm', args: 'recap' } as never)
-  expect(ran.text).toBe('Showing the Welcome back card in a pane.')
+  expect(ran.text).toBe('Showing the recap in a pane.')
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await ui.find({ key: 'recap-open' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /What Claude did/ })).toBeUndefined()
@@ -698,7 +699,7 @@ test('the recap pane shows the full card with the job steps', async ($, on) => {
     requestId: 'calm-recap',
     props: { title: 'Welcome back', isFocused: false, bodyColumns: 50, placement: 'dock', scroll: { offset: 0, bodyRows: 30 } },
   } as never)
-  expect(await pane.find({ type: 'Text', text: /Welcome back/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /↩ Recap/ })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: /^Steps$/ })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: /Read your notes/ })).toBeDefined()
   expect(await pane.find({ key: 'recap-pane-ok' })).toBeDefined()

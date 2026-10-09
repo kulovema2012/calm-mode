@@ -615,8 +615,8 @@ export function parseCitedPoints(reply: string): { points: string[]; refs: Array
 /** What the recap command answers: where the card shows, as the Recap style setting puts it. */
 async function shownWhere($: Engine): Promise<string> {
   return (await read($, settingsAtom)).recapStyle === 'pane'
-    ? 'Showing the Welcome back card in a pane.'
-    : 'Showing the Welcome back card above the prompt.'
+    ? 'Showing the recap in a pane.'
+    : 'Showing the recap above the prompt.'
 }
 
 /**
@@ -655,12 +655,17 @@ function jumpTo($: Engine, targets: ReadonlyArray<string | null | undefined>): P
   })()
 }
 
+/** The card's heading: "Welcome back" after time away, plain "Recap" when the person asked for it. */
+function recapHeading(recap: { isAsked?: boolean } | null): string {
+  return recap?.isAsked === true ? 'Recap' : 'Welcome back'
+}
+
 /** Shows the card, keeps "away 18m" current, then swaps in Haiku's points when they arrive. */
 async function presentRecap($: Engine, recap: Recap, answer: string) {
   await update($, recapAtom, () => recap)
   if ((await read($, settingsAtom)).recapStyle === 'pane') {
     // Unasked, Claude Code seats a pane only on a wide terminal; the band's "Open recap" seats it anywhere.
-    void $.ui.open({ id: RECAP_PANE, title: 'Welcome back' }).catch(() => undefined)
+    void $.ui.open({ id: RECAP_PANE, title: recapHeading(recap) }).catch(() => undefined)
   }
   runtime.recapTicker?.cancel()
   runtime.recapTicker = $.clock.every(60_000, () => {
@@ -1247,7 +1252,7 @@ export function registerCalmRecap(on: On, options?: unknown): void {
     })
     await $.command.register({
       name: 'recap',
-      description: 'Show the Welcome back card now; on|off turns Calm Recap on or off; statusline on|off adds the cache meter; keepwarm keeps the cache warm',
+      description: 'Show the recap card now; on|off turns Calm Recap on or off; statusline on|off adds the cache meter; keepwarm keeps the cache warm',
       argumentHint: '[on|off] | statusline on|off | keepwarm on|off|3h|until 18:00 | weather city <name>',
       immediate: true,
     })
@@ -1281,7 +1286,7 @@ export function registerCalmRecap(on: On, options?: unknown): void {
     if (!(await read($, enabledAtom))) {
       return { text: 'Calm Recap is off. Type /recap on first.' }
     }
-    await showRecap($, { turnId: `now-${await $.clock.now()}` })
+    await showRecap($, { turnId: `now-${await $.clock.now()}`, isAsked: true })
     return { text: await shownWhere($) }
   })
 
@@ -1487,7 +1492,7 @@ export function registerCalmRecap(on: On, options?: unknown): void {
         <Box flexDirection="row" justifyContent="space-between" width={columns}>
           <Box width={headerRoom}>
             <Text wrap="truncate" bold color={theme.title ?? theme.accent}>
-              {`↩ ${theme.shout('Welcome back')}${recap.awaySince === null ? '' : `${theme.sep}away ${theme.duration(now - recap.awaySince)}`}`}
+              {`↩ ${theme.shout(recapHeading(recap))}${recap.awaySince === null || recap.isAsked === true ? '' : `${theme.sep}away ${theme.duration(now - recap.awaySince)}`}`}
             </Text>
           </Box>
           {buttons}
@@ -1499,7 +1504,7 @@ export function registerCalmRecap(on: On, options?: unknown): void {
           <Box flexDirection="column" width={columns} key={`recap-${recapTick}`}>
             {header}
             <Box flexDirection="row">
-              <Button key="recap-open" label="Open recap" onPress={() => $.ui.open({ id: RECAP_PANE, title: 'Welcome back' })} />
+              <Button key="recap-open" label="Open recap" onPress={() => $.ui.open({ id: RECAP_PANE, title: recapHeading(recap) })} />
               <Text> </Text>
               {gotIt}
             </Box>
@@ -1568,7 +1573,7 @@ export function registerCalmRecap(on: On, options?: unknown): void {
     return (
       <Box flexDirection="column" width={width}>
         <Text bold color={theme.title ?? theme.accent} wrap="truncate">
-          {`↩ ${theme.shout('Welcome back')}${recap.awaySince === null ? '' : `${theme.sep}away ${theme.duration(now - recap.awaySince)}`}`}
+          {`↩ ${theme.shout(recapHeading(recap))}${recap.awaySince === null || recap.isAsked === true ? '' : `${theme.sep}away ${theme.duration(now - recap.awaySince)}`}`}
         </Text>
         {recapLines(recap, theme, settings.cyberpunk, width).map((line, i) => (
           line.target === undefined ? (

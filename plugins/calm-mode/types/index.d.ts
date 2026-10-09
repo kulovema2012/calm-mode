@@ -90,6 +90,8 @@ export type AwayRecap = {
   lastAsked: string
   /** When the job ended, which is when "away" started; null when a resumed session cannot tell. */
   awaySince: number | null
+  /** Shown because the person asked (the recap command), not after time away: headed "Recap", no "away". */
+  isAsked?: boolean
   isShowing: boolean
   /** The chat row each point scrolls to (a message id or tool_use_id), by point; null where none was cited. */
   targets?: Array<string | null>

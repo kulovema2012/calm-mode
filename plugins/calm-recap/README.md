@@ -55,7 +55,7 @@ It needs the cache meter in your status line (that is how it knows when the cach
 
 | Command | Does |
 |---|---|
-| `/recap` | Show the Welcome back card now |
+| `/recap` | Show the card now, headed Recap (Welcome back is kept for when you were away) |
 | `/recap on` / `/recap off` | Turn Calm Recap on or off (also the button on the band) |
 | `/recap statusline on` / `off` | Add or remove the cache meter in your status line |
 | `/recap weather city Khon Kaen` | Show the weather for a city you choose (no name: back to automatic) |
