@@ -910,21 +910,40 @@ export function parseCitedPoints(reply: string): { points: string[]; refs: Array
   return { points, refs }
 }
 
-/** Scrolls the chat to the first of `targets` it can reach; the pane closes first so the chat shows. */
-async function jumpTo($: Engine, targets: ReadonlyArray<string | null | undefined>) {
-  if ((await read($, settingsAtom)).recapStyle === 'pane') {
-    await $.ui.close({ id: RECAP_PANE }).catch(() => undefined)
-  }
-  let why = 'that part of the chat is no longer on screen'
-  for (const requestId of new Set(targets)) {
-    if (typeof requestId !== 'string') continue
-    const moved = await $.ui
+/**
+ * Scrolls the chat to the first of `targets` it can reach; the pane closes after, so the chat shows.
+ *
+ * The engine moves a transcript row only while the call answers the person's own press, so the first scroll
+ * starts before anything is awaited, and the press handler returns this promise rather than dropping it.
+ */
+function jumpTo($: Engine, targets: ReadonlyArray<string | null | undefined>): Promise<void> {
+  const ids = [...new Set(targets)].filter((id): id is string => typeof id === 'string')
+  const scroll = (requestId: string) =>
+    $.ui
       .scroll({ to: { requestId }, block: 'start' })
       .catch((error: unknown) => ({ deny: String(error instanceof Error ? error.message : error) }))
-    if (moved.deny === undefined) return
-    why = moved.deny
-  }
-  $.ui.toast(`Calm Mode: could not scroll there (${why})`)
+  const first = ids[0] === undefined ? undefined : scroll(ids[0])
+  return (async () => {
+    let why = 'that part of the chat is no longer on screen'
+    let moved = false
+    if (first !== undefined) {
+      const result = await first
+      moved = result.deny === undefined
+      why = result.deny ?? why
+    }
+    for (const requestId of ids.slice(1)) {
+      if (moved) break
+      const result = await scroll(requestId)
+      moved = result.deny === undefined
+      why = result.deny ?? why
+    }
+    if ((await read($, settingsAtom)).recapStyle === 'pane' && moved) {
+      await $.ui.close({ id: RECAP_PANE }).catch(() => undefined)
+    }
+    if (!moved) {
+      $.ui.toast(`Calm Mode: could not scroll there (${why})`)
+    }
+  })()
 }
 
 /** Shows the card, keeps "away 18m" current, then swaps in Haiku's points when they arrive. */
@@ -2443,7 +2462,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
                   {line.text}
                 </Text>
                 <Text> </Text>
-                <Button key={`recap-go-${i}`} label="↗" plain onPress={() => void jumpTo($, [line.target, recap.fallbackTarget])} />
+                <Button key={`recap-go-${i}`} label="↗" plain onPress={() => jumpTo($, [line.target, recap.fallbackTarget])} />
               </Box>
             )
           ))}
@@ -2631,7 +2650,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
                   {line.text}
                 </Text>
                 <Text> </Text>
-                <Button key={`pane-go-${i}`} label="↗" plain onPress={() => void jumpTo($, [line.target, recap.fallbackTarget])} />
+                <Button key={`pane-go-${i}`} label="↗" plain onPress={() => jumpTo($, [line.target, recap.fallbackTarget])} />
               </Box>
             )
         ))}
