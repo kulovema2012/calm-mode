@@ -824,7 +824,9 @@ const WEATHER_EVERY_MS = 15 * 60_000
 // Your location follows you: an hour old at most, so a new network (a trip, a café) shows within the hour.
 const LOCATION_FOR_MS = 60 * 60_000
 const CITY_LIMIT = 18
-const LOCATION_KEY = 'weatherLocation'
+// Versions before 0.19.0 / 0.10.0 saved under 'weatherLocation' without a source. A process still running one of
+// those (a session not yet reloaded) shares this store, so the place now lives under its own key, out of their reach.
+const LOCATION_KEY = 'weatherPlace'
 // A city typed into Weather city is found once with Open-Meteo's place search and kept until the name changes.
 const CITY_KEY = 'weatherCityLocation'
 
