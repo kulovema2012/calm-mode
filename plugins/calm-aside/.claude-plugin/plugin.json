@@ -1,6 +1,6 @@
 {
   "name": "calm-aside",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Calm Aside: a read-only side chat. /aside opens a pane where you ask about the session so far; a tool-less fork of the session answers, and nothing goes back into the main chat.",
   "author": {
     "name": "Newk"

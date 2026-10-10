@@ -253,7 +253,7 @@ export function registerCalmAside(on: On, options?: unknown): void {
     await $.command.register({
       name: 'aside',
       description: 'Read-only side chat about this session: shows or hides its pane; clear empties it',
-      argumentHint: '[question] | hide | clear',
+      argumentHint: '[question] | close | clear',
       immediate: true,
     })
     return next(e)
@@ -267,7 +267,7 @@ export function registerCalmAside(on: On, options?: unknown): void {
       return {}
     }
     // A bare /aside toggles the pane; a question always shows it.
-    if (args.toLowerCase() === 'hide' || (args === '' && runtime.isOpen)) {
+    if (args.toLowerCase() === 'hide' || args.toLowerCase() === 'close' || (args === '' && runtime.isOpen)) {
       await hidePane($)
       return {}
     }

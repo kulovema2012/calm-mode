@@ -31,7 +31,7 @@ If you have not added the marketplace yet: `/plugin marketplace add kulovema2012
 |---|---|
 | `/aside` | Show the pane, or hide it when it is up (your questions stay) |
 | `/aside what has changed so far?` | Open it and ask at once |
-| `/aside hide` | Hide the pane |
+| `/aside close` or `/aside hide` | Hide the pane |
 | `/aside clear` | Empty the pane |
 | **Enter** in the pane | Ask what you typed |
 | **Esc** | Give the keys back to the main prompt (the pane stays) |
