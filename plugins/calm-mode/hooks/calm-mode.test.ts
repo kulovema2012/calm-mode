@@ -1277,3 +1277,32 @@ test('each recap point ends in ↗, and pressing it tries to scroll the chat the
   expect(toasts.filter(toast => toast.includes('could not scroll there')).length).toBe(1)
   await ui.unmount()
 })
+
+test('subagents still running after Claude’s turn show Subagents running, not Needs you', async ($, on) => {
+  let agents: Array<{ id: string; status: string }> = [
+    { id: 'a1', status: 'running' },
+    { id: 'a2', status: 'running' },
+  ]
+  on('agent.list', () => ({ value: agents.map(a => ({ ...a, description: 'Look around', type: 'Explore' })) }) as never)
+  on('classic.SubagentStop', () => ({}) as never)
+  await start($, on)
+  await $.tool.call({ tool: PLAN_TOOL, steps: ['Read the code', 'Fix the bug'] } as never)
+  await $.turn.complete(FINISHED as never)
+  let ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /2 subagents running/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Needs you/ })).toBeUndefined()
+  await ui.unmount()
+
+  agents = [{ id: 'a2', status: 'running' }]
+  await $.classic.SubagentStop({ agent_id: 'a1', agent_type: 'Explore', stop_hook_active: false, agent_transcript_path: '' } as never)
+  ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /Subagent running/ })).toBeDefined()
+  await ui.unmount()
+
+  agents = []
+  await $.classic.SubagentStop({ agent_id: 'a2', agent_type: 'Explore', stop_hook_active: false, agent_transcript_path: '' } as never)
+  ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /Needs you/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /running/ })).toBeUndefined()
+  await ui.unmount()
+})

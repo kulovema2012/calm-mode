@@ -263,6 +263,21 @@ async function syncFrameTimer($: Engine) {
   await syncMusic($)
 }
 
+/** Turns with the band's tick while subagents run on their own. */
+const SPINNER = ['◐', '◓', '◑', '◒']
+
+/** Subagents the main loop started that are still at work; one that is stopping right now can be left out. */
+async function runningHelpers($: Engine, stopping?: string): Promise<number> {
+  const agents = await $.agent.list().catch(() => [])
+  return agents.filter(
+    agent =>
+      agent.parentId === undefined &&
+      agent.id !== stopping &&
+      agent.teammateId === undefined &&
+      (agent.status === 'running' || agent.status === 'pending'),
+  ).length
+}
+
 async function change($: Engine, fn: (list: Checklist) => Checklist) {
   await update($, checklistAtom, list => (list === null ? list : fn(list)))
   await syncFrameTimer($)
@@ -1956,6 +1971,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
     const wasRunning = runtime.isTurnRunning
     runtime.isTurnRunning = true
     runtime.hasTurnStarted = true
+    await update($, checklistAtom, current => (current !== null && (current.helpers ?? 0) > 0 ? { ...current, helpers: 0 } : current))
     if (text !== '' && !text.startsWith('/')) {
       // A message of your own resets keep-warm's "20 pings in a row".
       await update($, keepWarmAtom, current => (current !== null && current.isOn ? { ...current, pings: 0 } : current))
@@ -2168,6 +2184,24 @@ export function registerCalmMode(on: On, options?: unknown): void {
     return next(e)
   })
 
+  // A subagent that finishes while Claude's own turn is over: recount, and once none are left, wait for the person.
+  on('classic.SubagentStop', async ($, e, next) => {
+    const list = await read($, checklistAtom)
+    if (!runtime.isTurnRunning && list !== null && list.phase === 'working' && (list.helpers ?? 0) > 0) {
+      const left = await runningHelpers($, e.agent_id)
+      await change($, current =>
+        current.phase !== 'working'
+          ? current
+          : left > 0
+            ? { ...current, helpers: left }
+            : current.hasPlan && current.tasks.some(task => task.status !== 'done')
+              ? { ...current, helpers: 0, phase: 'needsYou', needsYouReason: 'Claude is waiting for your reply' }
+              : { ...current, helpers: 0 },
+      )
+    }
+    return next(e)
+  })
+
   on('turn.complete', async ($, e, next) => {
     if (e.agentId !== undefined) {
       return next(e)
@@ -2186,6 +2220,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
       return next(e)
     }
 
+    const helpers = await runningHelpers($)
     if (e.reason === 'error') {
       const sentence = apiErrorSentence(runtime.lastApiError?.kind, runtime.lastApiError?.details ?? '')
       await finish($, current => ({ ...current, phase: 'stuck', needsYouReason: null, stuckReason: sentence }))
@@ -2198,6 +2233,9 @@ export function registerCalmMode(on: On, options?: unknown): void {
       }))
     } else if (e.reason === 'aborted' || e.isAborted) {
       await finish($, current => ({ ...current, phase: 'stopped', needsYouReason: null }))
+    } else if (helpers > 0) {
+      // Claude's turn ended but subagents it started still run in the background: still working, not waiting on you.
+      await change($, current => ({ ...current, phase: 'working', stuckReason: null, needsYouReason: null, helpers }))
     } else if (list.hasPlan && list.tasks.some(task => task.status !== 'done')) {
       await change($, current => ({
         ...current,
@@ -2543,12 +2581,18 @@ export function registerCalmMode(on: On, options?: unknown): void {
           const titleText = `${theme.headerMark}${title}`
           const titleCell =
             titleText.length > barColumn - 1 ? `${titleText.slice(0, barColumn - 2)}… ` : titleText.padEnd(barColumn)
+          const helpers = list.helpers ?? 0
           return (
             <Text wrap="truncate">
               <Text bold color={theme.title}>{titleCell}</Text>
               <Text dimColor={!settings.cyberpunk} color={settings.cyberpunk ? theme.accent : undefined}>
                 {`⏱ ${elapsed}`}
               </Text>
+              {helpers > 0 ? (
+                <Text bold color={theme.accent}>
+                  {`${sep}${SPINNER[tick % SPINNER.length]} ${theme.shout(helpers === 1 ? 'Subagent running' : `${helpers} subagents running`)}`}
+                </Text>
+              ) : null}
             </Text>
           )
         }

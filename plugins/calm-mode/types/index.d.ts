@@ -20,6 +20,8 @@ export type Checklist = {
   hasPlan: boolean
   needsYouReason: string | null
   stuckReason: string | null
+  /** Subagents still running in the background after Claude's own turn ended; 0 or absent when none. */
+  helpers?: number
   startedAt: number
   finishedAt: number | null
   isCollapsed: boolean
