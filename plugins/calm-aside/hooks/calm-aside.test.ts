@@ -84,6 +84,9 @@ test('the prompt carries earlier answered side questions, newest last, at most m
   expect(prompt).not.toContain('one?')
   expect(prompt).not.toContain('boom')
   expect(prompt.endsWith('Side question: four?')).toBe(true)
+  // The fork's transcript ends with the latest main-chat message unanswered; the prompt must say not to answer it.
+  expect(prompt).toContain('Answer ONLY the side question')
+  expect(prompt).toContain('Do not answer it')
   expect(chatText([{ role: 'user', text: 'hi' }, { role: 'assistant', text: 'hello' }])).toBe('USER: hi\n\nASSISTANT: hello')
 })
 

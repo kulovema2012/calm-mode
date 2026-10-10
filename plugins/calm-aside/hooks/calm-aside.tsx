@@ -18,7 +18,7 @@ type Engine = EngineInterface
 
 export const ASIDE_PANE = 'calm-aside'
 /** An answer longer than this is cut, so one reply cannot fill the pane. */
-export const ANSWER_LIMIT = 1200
+export const ANSWER_LIMIT = 4000
 /** How much of the chat's text a quick answer sends, newest last. */
 export const QUICK_CHAT_CHARS = 60_000
 /** Side questions kept in memory at most, whatever Side questions kept says. */
@@ -122,9 +122,14 @@ export function promptFor(question: string, earlier: readonly Exchange[], maxHis
     .slice(-maxHistory)
     .map(x => `Q: ${x.question}\nA: ${x.answer}`)
     .join('\n\n')
+  // The fork replays the main thread's last request, which ends with the person's latest main-chat message and not
+  // the reply to it, so that message looks unanswered. Say so, or the fork answers it instead of the side question.
   return [
-    'This is a read-only side question about the conversation above. Answer from the transcript so far.',
-    'Do not use tools, do not propose edits, do not continue the main task; answer briefly in plain prose.',
+    '<side-question-instructions>',
+    'This message is NOT part of the main task. It is a read-only side question the person asked about the conversation above, in a separate side chat.',
+    'The latest main-chat request above may look unanswered: it is being handled elsewhere. Do not answer it, do not continue it, and do not use tools or propose edits.',
+    'Answer ONLY the side question at the end, from the transcript so far, briefly and in plain prose.',
+    '</side-question-instructions>',
     prior === '' ? '' : `Earlier side questions and their answers:\n\n${prior}`,
     `Side question: ${question}`,
   ]
