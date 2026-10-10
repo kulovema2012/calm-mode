@@ -12,7 +12,7 @@ fork · 1.2 s · cache 72.8k · new 242 · out 100
 You: is it planning to change the tests?
 thinking…
 > _
-[ Clear ] [ Close ]
+[ Clear ] [ Hide ]
 ```
 
 It works on its own or beside [Calm Mode](../../README.md) or [Calm Recap](../calm-recap/README.md): it draws only its own pane, not the band.
@@ -29,15 +29,16 @@ If you have not added the marketplace yet: `/plugin marketplace add kulovema2012
 
 | | |
 |---|---|
-| `/aside` | Open the pane |
+| `/aside` | Show the pane, or hide it when it is up (your questions stay) |
 | `/aside what has changed so far?` | Open it and ask at once |
+| `/aside hide` | Hide the pane |
 | `/aside clear` | Empty the pane |
 | **Enter** in the pane | Ask what you typed |
 | **Esc** | Give the keys back to the main prompt (the pane stays) |
-| **ctrl+x tab** | Go back to the pane |
-| **Clear** / **Close** | Empty the pane / close it |
+| **Click the box**, or `/aside` twice | Go back to the pane's box |
+| **Clear** / **Hide** | Empty the pane / hide it |
 
-The pane opens with the cursor in its question box. On a terminal narrower than about 110 columns it opens above the prompt instead of beside the chat.
+The pane opens with the cursor in its question box. Claude Code cannot bind a key to a slash command, so there is no hotkey to open it: `/as`, Tab, Enter is the quickest way. On a terminal narrower than about 110 columns it opens above the prompt instead of beside the chat.
 
 ## How it answers
 

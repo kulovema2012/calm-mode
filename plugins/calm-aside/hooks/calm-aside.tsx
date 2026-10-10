@@ -39,7 +39,8 @@ export const settingsAtom = atom({ plugin: 'calm-aside', key: 'settings' } as co
 export const exchangesAtom = atom({ plugin: 'calm-aside', key: 'exchanges' } as const, [] as Exchange[])
 
 // Ids for new questions and the ones waiting for Claude's reply to end; a reload resets them.
-const runtime: { nextId: number; waiting: number[] } = { nextId: 0, waiting: [] }
+// isOpen: whether the pane is up, so a bare /aside can hide it again.
+const runtime: { nextId: number; waiting: number[]; isOpen: boolean } = { nextId: 0, waiting: [], isOpen: false }
 
 /** Reads the options, falling back to the defaults for anything missing or malformed. */
 export function normalizeSettings(options: unknown): AsideSettings {
@@ -222,7 +223,14 @@ async function ask($: Engine, question: string) {
 
 async function openPane($: Engine) {
   const theme = themeOf(await read($, settingsAtom))
-  await $.ui.open({ id: ASIDE_PANE, title: theme.shout('Aside'), focus: true }).catch(() => undefined)
+  const opened = await $.ui.open({ id: ASIDE_PANE, title: theme.shout('Aside'), focus: true }).catch(() => undefined)
+  if (opened !== undefined) runtime.isOpen = true
+}
+
+/** Hides the pane; the side questions stay, and the next /aside shows them again. */
+async function hidePane($: Engine) {
+  runtime.isOpen = false
+  await $.ui.close({ id: ASIDE_PANE }).catch(() => undefined)
 }
 
 async function clearExchanges($: Engine) {
@@ -239,8 +247,8 @@ export function registerCalmAside(on: On, options?: unknown): void {
     await update($, settingsAtom, () => configured)
     await $.command.register({
       name: 'aside',
-      description: 'Read-only side chat about this session: opens a pane; clear empties it',
-      argumentHint: '[question] | clear',
+      description: 'Read-only side chat about this session: shows or hides its pane; clear empties it',
+      argumentHint: '[question] | hide | clear',
       immediate: true,
     })
     return next(e)
@@ -253,9 +261,20 @@ export function registerCalmAside(on: On, options?: unknown): void {
       await clearExchanges($)
       return {}
     }
+    // A bare /aside toggles the pane; a question always shows it.
+    if (args.toLowerCase() === 'hide' || (args === '' && runtime.isOpen)) {
+      await hidePane($)
+      return {}
+    }
     await openPane($)
     await ask($, args)
     return {}
+  })
+
+  // The person may close it with its mark or ctrl+x x; remember, so the next /aside shows it rather than hides it.
+  on('ui.close', { id: ASIDE_PANE }, async ($, e, next) => {
+    runtime.isOpen = false
+    return next(e)
   })
 
   // Questions that found nothing to fork (quick answers off) are answered once Claude's reply ends.
@@ -285,7 +304,7 @@ export function registerCalmAside(on: On, options?: unknown): void {
       return { element: e.element }
     }
     if (e.element === 'aside-close') {
-      await $.ui.close({ id: ASIDE_PANE }).catch(() => undefined)
+      await hidePane($)
       return { element: e.element }
     }
     return next(e)
@@ -345,7 +364,7 @@ export function registerCalmAside(on: On, options?: unknown): void {
             <Input
               key="question"
               label="> "
-              placeholder={e.props.isFocused ? 'Ask about this session, Enter to send, Esc to leave' : 'ctrl+x tab to come back here'}
+              placeholder={e.props.isFocused ? 'Ask about this session, Enter to send, Esc to leave' : 'click here to ask, or type /aside twice'}
               value=""
               submitLabel="ask"
               autoFocus
@@ -354,7 +373,7 @@ export function registerCalmAside(on: On, options?: unknown): void {
           )}
           <Box flexDirection="row" gap={1}>
             <Button key="aside-clear" label="Clear" onPress={() => undefined} />
-            <Button key="aside-close" label="Close" onPress={() => undefined} />
+            <Button key="aside-close" label="Hide" onPress={() => undefined} />
           </Box>
         </Box>
       </Box>

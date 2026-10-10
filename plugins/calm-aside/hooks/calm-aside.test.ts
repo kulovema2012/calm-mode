@@ -167,3 +167,21 @@ test('/aside clear empties the pane', async ($, on) => {
   expect(await pane.find({ type: 'Text', text: /You:/ })).toBeUndefined()
   await pane.unmount()
 })
+
+test('a bare /aside hides an open pane and shows it again; /aside hide hides it', async ($, on) => {
+  const world = await start($, on)
+  await $.command.run({ command: 'aside', args: '' } as never)
+  expect(world.opens).toBe(1)
+  await $.command.run({ command: 'aside', args: '' } as never)
+  expect(world.closes).toBe(1)
+  await $.command.run({ command: 'aside', args: '' } as never)
+  expect(world.opens).toBe(2)
+  await $.command.run({ command: 'aside', args: 'hide' } as never)
+  expect(world.closes).toBe(2)
+  // A question always shows the pane, even when it is already up.
+  await $.command.run({ command: 'aside', args: 'which files?' } as never)
+  await $.command.run({ command: 'aside', args: 'and the tests?' } as never)
+  await world.settle()
+  expect(world.opens).toBe(4)
+  expect(world.closes).toBe(2)
+})
