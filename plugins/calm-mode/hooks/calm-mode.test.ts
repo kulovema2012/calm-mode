@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { clampVolume, cleanName, fitChecklist, keepWarmDecision, keepWarmUntil, resumeFromCacheState, parseWindowsLocation, isLocationFresh, parseMacLocation, weatherSymbol, weatherText, fitRecap, mayPlay, recapLines, stepAwayMinutes, fallbackPoints, parsePoints, parseCitedPoints, findRow, wrapText, musicCommand, nextTrack, trackName, windowsMusicScript } from './calm-mode'
+import { clampVolume, cleanName, fitChecklist, keepWarmDecision, keepWarmUntil, resumeFromCacheState, parseWindowsLocation, isLocationFresh, parseMacLocation, weatherSymbol, weatherText, fitRecap, mayPlay, recapLines, stepAwayMinutes, fallbackPoints, parsePoints, parseCitedPoints, findRow, wrapText, musicCommand, nextTrack, trackName, windowsMusicScript, parseNextSteps, offeredNextSteps, cleanSuggestion } from './calm-mode'
 
 /** argv of every player the plugin started in the current test. */
 let spawned: string[][] = []
@@ -27,10 +27,18 @@ const BAND = {
   },
 } as const
 
+/** What Haiku answers when asked for next steps, how often it was asked, and what a press drafted. */
+let nextStepReply = '[]'
+let nextStepAsks = 0
+let filledPrompts: string[] = []
+
 /** The world beneath the plugin: store, clock, a quiet model, plain tools. */
 async function start($: Engine, on: On, onModelCall: () => void = () => undefined, isTyping = true) {
   spawned = []
   statuses = []
+  nextStepReply = '[]'
+  nextStepAsks = 0
+  filledPrompts = []
   toasts = []
   mock.store(on)
   on('process.spawn', async function* (_$, e) {
@@ -41,9 +49,17 @@ async function start($: Engine, on: On, onModelCall: () => void = () => undefine
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', (_$, e) => ({ text: e.answer }))
-  on('model.complete', () => {
+  on('model.complete', (_$, e) => {
+    if ((e.system ?? '').includes('Predict what the person')) {
+      nextStepAsks += 1
+      return { value: { isAnswered: true, text: nextStepReply, usage: {} } } as never
+    }
     onModelCall()
     return { value: { isAnswered: true, text: 'Build my landing page', usage: {} } } as never
+  })
+  on('prompt.fill', (_$, e) => {
+    filledPrompts.push(e.text)
+    return { isFilled: true, text: e.text } as never
   })
   on('tool.call', { tool: 'TodoWrite' }, () => ({ result: { oldTodos: [], newTodos: [] } }))
   on('tool.call', { tool: 'Read' }, () => ({ result: 'file contents' }) as never)
@@ -1309,5 +1325,62 @@ test('subagents still running after Claude’s turn show Subagents running, not 
   ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await ui.find({ type: 'Text', text: /Needs you/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /running/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test("next steps: Haiku's list is cleaned, capped at three, and an unknown slash command is dropped", () => {
+  const reply =
+    'Sure: [{"label":"Run tests","prompt":"Run the tests"},{"label":"Review","prompt":"/review-it now"},' +
+    '{"label":"Commit","prompt":"Commit the fix"},{"label":"Push","prompt":"Push it"},{"label":"More","prompt":"And more"}]'
+  const items = parseNextSteps(reply, new Set(['commit']))
+  expect(items.map(item => item.prompt)).toEqual(['Run the tests', 'Commit the fix', 'Push it'])
+  expect(parseNextSteps('no list here')).toEqual([])
+  expect(parseNextSteps(JSON.stringify([{ label: 'x', prompt: `hidden ${String.fromCodePoint(0xe0041)} text` }]))).toEqual([])
+  expect(cleanSuggestion('Run\u001b[31m the​ tests', 48)).toBe('Run the tests')
+})
+
+test('next steps: an answer offering one thing gets Yes and No with no model call', () => {
+  const items = offeredNextSteps('All done.\n\nWant me to **commit the fix**?')
+  expect(items?.[0]?.label).toBe('Yes, commit the fix')
+  expect(items?.[1]?.label).toBe('No, leave it')
+  expect(offeredNextSteps('Should I use Haiku or the main model?')).toBeNull()
+  expect(offeredNextSteps('Done. Tests pass.')).toBeNull()
+})
+
+test('next steps show after an answer, 1 drafts the first, and the next turn clears them', async ($, on) => {
+  on('agent.list', () => ({ value: [] }) as never)
+  const clock = await start($, on)
+  nextStepReply = '[{"label":"Run the tests","prompt":"Run the tests for the pricing page"}]'
+  const long = 'Added the pricing section and wired the buttons. Everything builds and the page renders cleanly now.'
+  await $.turn.complete({ ...FINISHED, answer: long } as never)
+  await clock.advance(1)
+  const idle = { ...BAND, props: { ...BAND.props, isWorking: false }, surface: 'terminal' } as const
+  let ui = await $.ui.mount(idle)
+  expect(nextStepAsks).toBe(1)
+  expect(await ui.find({ type: 'Text', text: /^Next$/ })).toBeDefined()
+  expect(JSON.stringify(await ui.find({ key: 'next-take-0' }))).toContain('"hotkey":"1"')
+  await ui.press({ key: 'next-take-0' })
+  expect(filledPrompts).toEqual(['Run the tests for the pricing page'])
+  await ui.redraw()
+  expect(await ui.find({ key: 'next-take-0' })).toBeUndefined()
+  await ui.unmount()
+
+  await $.turn.complete({ ...FINISHED, turnId: 't2', answer: long } as never)
+  await clock.advance(1)
+  await $.turn.start({ text: 'thanks', turnId: 't3' })
+  ui = await $.ui.mount(idle)
+  expect(await ui.find({ key: 'next-take-0' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('next steps: an offer at the end of the answer skips Haiku', async ($, on) => {
+  on('agent.list', () => ({ value: [] }) as never)
+  const clock = await start($, on)
+  await $.turn.complete({ ...FINISHED, answer: 'Found the cause: the keys were on the wrong plugin.\n\nWant me to fix the key clash?' } as never)
+  await clock.advance(1)
+  const ui = await $.ui.mount({ ...BAND, props: { ...BAND.props, isWorking: false }, surface: 'terminal' })
+  expect(nextStepAsks).toBe(0)
+  expect(await ui.find({ key: 'next-take-0' })).toBeDefined()
+  expect(JSON.stringify(await ui.find({ key: 'next-take-0' }))).toContain('Yes, fix the key clash')
   await ui.unmount()
 })

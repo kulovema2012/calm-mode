@@ -1,6 +1,6 @@
 {
   "name": "calm-mode",
-  "version": "0.19.8",
+  "version": "0.20.0",
   "description": "Calm Mode: hides tool calls and shows one friendly checklist above the prompt while Claude works.",
   "author": {
     "name": "Newk"
@@ -73,6 +73,12 @@
       "title": "Away after (minutes)",
       "description": "Minutes of quiet after a job before the Welcome back card appears (1 to 120).",
       "default": 5
+    },
+    "nextSteps": {
+      "type": "boolean",
+      "title": "Next steps",
+      "description": "After Claude answers, suggest up to three next prompts above the input (one small Haiku call, none when Claude just asked a yes or no question). Press 1 to 3 in an empty prompt to use one.",
+      "default": true
     },
     "recapStyle": {
       "type": "string",

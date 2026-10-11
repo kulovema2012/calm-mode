@@ -96,7 +96,7 @@ Every switch is an icon, `◉` on and `○` off, each row says what it does, and
 |---|---|
 | Display | Hide tool rows, Job naming, Cyberpunk, Weather, Button label, Weather city |
 | Music | Music, Volume, Track, Music file |
-| Recap | Away recap, Away after, Recap style |
+| Recap | Away recap, Away after, Next steps, Recap style |
 | Status line | Cache in status line, Keep warm |
 
 | Setting | Default | What it does |
@@ -111,6 +111,7 @@ Every switch is an icon, `◉` on and `○` off, each row says what it does, and
 | Music file | (empty) | Full path to your own MP3 or WAV. When set, it plays instead of the built-in track. |
 | Away recap | ON | After a job ends, if you stay quiet for a while, the band shows a **Welcome back** card. |
 | Away after | 5m | How long that while is. `[ − ]` and `[ + ]` step through 1, 2, 3, 5, 10, 15, 20, 30, 45, 60, 90 and 120 minutes; `/config` takes any value from 1 to 120. |
+| Next steps | ON | After Claude answers, up to three suggested next prompts; press 1 to 3 in an empty prompt to use one. See [Next steps](#next-steps). |
 | Recap | Band | Where the Welcome back recap reads. **Band**: above the prompt, full width, trimmed to fit. **Pane**: a larger panel of its own that also lists the job's steps; the band keeps one line with `[ Open recap ]`. |
 | Cache in status line | OFF | Adds `⚡ cache 87% ▰▰▰▰▰▰▰▰▱▱ 47m` at the right end of your status line. The button (or `/calm statusline on\|off`) edits your status line for you. |
 
@@ -158,6 +159,23 @@ You last asked
 
 **After `claude --resume`** the card appears straight away, rebuilt from the saved conversation: how long you were away, your last request, the points of Claude's last reply, and a warning when the prompt cache has expired (your next message then re-reads the whole conversation at full price).
 
+### Next steps
+
+After Claude answers, the band suggests up to three prompts you are likely to send next:
+
+```
+NEXT
+  1: Run the tests for the pricing page   copy
+  2: Commit the fix                       copy
+  3: /code-review the pricing changes     copy
+```
+
+Press **1** to **3** in an empty prompt (or click) to put that prompt in the box as a draft; press Enter to send it, or edit it first. `copy` puts it on the clipboard instead. In the desktop app, which has no box a plugin can fill, a press sends it straight away. The suggestions go away when you send anything, and they hide while Claude works and while the settings are open (whose tabs use the same digits).
+
+They come from one small Haiku call that reads a short digest: your last request, the end of Claude's answer, the steps still open and your skills and slash commands (a suggestion can be one of them; a command you do not have is never offered). When the answer simply ends with an offer such as "Want me to fix the key clash?", you get **Yes** and **No** with no model call at all. Answers shorter than 80 characters get no suggestions. Turn it off with **Next steps** in the Recap tab.
+
+Adapted from [next-steps](https://github.com/anthropics/claude-plugins-community/tree/main/next-steps) by Thariq Shihipar (MIT), by way of next-steps-desktop. The original re-runs the whole conversation on the main model after every turn; this one asks Haiku a few hundred words instead.
+
 ### Cache meter in the status line
 
 ```
@@ -202,7 +220,7 @@ The same settings appear in `/config` under Calm Mode, and the two always agree.
 ## Good to know
 
 - While Calm Mode is on, Claude has to lay out a plan (2 to 12 plain-English steps) before it uses any other tool. This adds a few extra tokens to each request.
-- Each new request makes one small Haiku call to give the job a short name.
+- Each new request makes one small Haiku call to give the job a short name, and each answer one more for the next steps (none when the answer ends with a yes or no offer).
 - Subagents are never blocked.
 
 ## For developers

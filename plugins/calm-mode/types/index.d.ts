@@ -59,7 +59,15 @@ export type CalmSettings = {
   weather: boolean
   /** A city typed in for the weather; blank finds it from the internet address. */
   weatherCity: string
+  /** After Claude answers, suggest up to three next prompts above the input. */
+  nextSteps: boolean
 }
+
+/** One suggested next prompt: the short words on its button and the full prompt it sends. */
+export type NextStep = { label: string; prompt: string }
+
+/** The suggestions for the turn that just ended; empty while Haiku is still thinking. */
+export type NextSteps = { turnId: string; items: NextStep[]; isLoading: boolean }
 
 /** The settings panel's tabs. */
 export type SettingsTab = 'display' | 'music' | 'recap' | 'status'
@@ -122,6 +130,8 @@ declare module 'claude-code' {
       keepWarm: KeepWarm | null
       /** Set once this process has started, to tell a resumed session from a hot reload. */
       sessionSeen: boolean
+      /** Suggested next prompts after Claude's last answer, or null when none are offered. */
+      nextSteps: NextSteps | null
     }
   }
 }
