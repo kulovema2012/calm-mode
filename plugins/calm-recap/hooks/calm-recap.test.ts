@@ -81,6 +81,7 @@ test('after 5 quiet minutes the Welcome back card shows; Got it clears it', asyn
   expect(await ui.find({ type: 'Text', text: /Answered · took 1m 30s/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /make the pricing cards blue/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /➜ Needs you: send the logo/ })).toBeDefined()
+  expect(JSON.stringify(await ui.find({ key: 'recap-ok' }))).toContain('"hotkey":"g"')
   await ui.press({ key: 'recap-ok' })
   expect(await ui.find({ type: 'Text', text: /Welcome back/ })).toBeUndefined()
   await ui.unmount()

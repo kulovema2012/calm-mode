@@ -1503,7 +1503,7 @@ export function registerCalmRecap(on: On, options?: unknown): void {
           {buttons}
         </Box>
       )
-      const gotIt = <Button key="recap-ok" label="Got it" variant="primary" onPress={() => dismissRecap($)} />
+      const gotIt = <Button key="recap-ok" label="Got it (g)" hotkey="g" variant="primary" onPress={() => dismissRecap($)} />
       if (settings.recapStyle === 'pane') {
         return (
           <Box flexDirection="column" width={columns} key={`recap-${recapTick}`}>
@@ -1596,7 +1596,7 @@ export function registerCalmRecap(on: On, options?: unknown): void {
             )
         ))}
         <Box flexDirection="row" justifyContent="flex-end" width={width}>
-          <Button key="recap-pane-ok" label="Got it" variant="primary" onPress={() => dismissRecap($)} />
+          <Button key="recap-pane-ok" label="Got it (g)" hotkey="g" variant="primary" onPress={() => dismissRecap($)} />
         </Box>
       </Box>
     )
