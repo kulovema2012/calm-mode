@@ -431,6 +431,8 @@ test('after 5 quiet minutes the band shows a Welcome back card; Got it clears it
   expect(await ui.find({ type: 'Text', text: /Build my landing page/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /What Claude did/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^  • \S/ })).toBeDefined()
+  expect(JSON.stringify(await ui.find({ key: 'recap-ok' }))).toContain('"hotkey":"0"')
+  expect(JSON.stringify(await ui.find({ key: 'recap-ok-g' }))).toContain('"hotkey":"g"')
   await ui.press({ key: 'recap-ok' })
   expect(await ui.find({ type: 'Text', text: /Welcome back/ })).toBeUndefined()
   await ui.unmount()
