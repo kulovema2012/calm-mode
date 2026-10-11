@@ -2581,17 +2581,18 @@ export function registerCalmMode(on: On, options?: unknown): void {
           const titleText = `${theme.headerMark}${title}`
           const titleCell =
             titleText.length > barColumn - 1 ? `${titleText.slice(0, barColumn - 2)}… ` : titleText.padEnd(barColumn)
+          // The step row carries the full subagent sign; the header, which the buttons crowd, keeps only
+          // a short one, and only when no step row shows it.
           const helpers = list.helpers ?? 0
+          const isHelperRowShown = !list.isCollapsed && list.tasks.some(task => task.status === 'active')
           return (
             <Text wrap="truncate">
               <Text bold color={theme.title}>{titleCell}</Text>
               <Text dimColor={!settings.cyberpunk} color={settings.cyberpunk ? theme.accent : undefined}>
                 {`⏱ ${elapsed}`}
               </Text>
-              {helpers > 0 ? (
-                <Text bold color={theme.accent}>
-                  {`${sep}${SPINNER[tick % SPINNER.length]} ${theme.shout(helpers === 1 ? 'Subagent running' : `${helpers} subagents running`)}`}
-                </Text>
+              {helpers > 0 && !isHelperRowShown ? (
+                <Text bold color={theme.accent}>{`${sep}${SPINNER[tick % SPINNER.length]} ${helpers}`}</Text>
               ) : null}
             </Text>
           )
@@ -2622,6 +2623,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
     // Never scroll: fold finished steps, then later ones, into one row each when the band is short.
     const window = fitChecklist(list.tasks, Math.max(2, e.props.maxRows - 1 - settingsRows))
 
+    const helpers = list.phase === 'working' ? (list.helpers ?? 0) : 0
     const rows = window.shown.map(task => {
       const i = list.tasks.indexOf(task)
       if (task.status === 'done') {
@@ -2646,9 +2648,15 @@ export function registerCalmMode(on: On, options?: unknown): void {
             <Text color={theme.accent}>{isPaused ? theme.icons.paused : theme.icons.active}</Text>
             <Text bold color={settings.cyberpunk ? theme.title : undefined}>{`${fit(task.name)} `}</Text>
             <Text color={theme.accent}>{meter}</Text>
-            <Text color={settings.cyberpunk ? theme.accent : undefined}>
-              {task.hasReported ? `  ${task.percent}%` : `  ${theme.labels.working}`}
-            </Text>
+            {helpers > 0 ? (
+              <Text bold color={theme.accent}>
+                {`  ${SPINNER[tick % SPINNER.length]} ${theme.shout(helpers === 1 ? 'Subagent running' : `${helpers} subagents running`)}`}
+              </Text>
+            ) : (
+              <Text color={settings.cyberpunk ? theme.accent : undefined}>
+                {task.hasReported ? `  ${task.percent}%` : `  ${theme.labels.working}`}
+              </Text>
+            )}
           </Box>
         )
       }

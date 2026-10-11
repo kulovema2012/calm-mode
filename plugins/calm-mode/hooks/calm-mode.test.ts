@@ -1290,6 +1290,9 @@ test('subagents still running after Claude’s turn show Subagents running, not 
   await $.turn.complete(FINISHED as never)
   let ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await ui.find({ type: 'Text', text: /2 subagents running/ })).toBeDefined()
+  // The header keeps only the timer, so the buttons on its right never cut the sign off.
+  expect(await ui.find({ type: 'Text', text: /⏱.*subagents/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /WORKING|Working/ })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /Needs you/ })).toBeUndefined()
   await ui.unmount()
 
