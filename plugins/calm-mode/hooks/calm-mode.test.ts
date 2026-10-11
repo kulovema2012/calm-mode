@@ -1337,6 +1337,10 @@ test("next steps: Haiku's list is cleaned, capped at three, and an unknown slash
   expect(parseNextSteps('no list here')).toEqual([])
   expect(parseNextSteps(JSON.stringify([{ label: 'x', prompt: `hidden ${String.fromCodePoint(0xe0041)} text` }]))).toEqual([])
   expect(cleanSuggestion('Run\u001b[31m the​ tests', 48)).toBe('Run the tests')
+  // A prompt longer than 200 characters is cut to 200, so a press in the desktop app never sends a paragraph.
+  const [long] = parseNextSteps(JSON.stringify([{ label: 'Long', prompt: 'word '.repeat(80) }]))
+  expect([...(long?.prompt ?? '')].length).toBe(200)
+  expect(long?.prompt.endsWith('…')).toBe(true)
 })
 
 test('next steps: an answer offering one thing gets Yes and No with no model call', () => {
