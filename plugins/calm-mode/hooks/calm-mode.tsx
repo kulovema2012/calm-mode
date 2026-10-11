@@ -2015,10 +2015,27 @@ const NEXT_SYSTEM =
   `array, no prose, no code fence: [{"label": "<at most ${NEXT_LABEL_MAX} characters for a button>", ` +
   `"prompt": "<the full prompt, at most ${NEXT_PROMPT_MAX} characters>"}]`
 
+// The last list offered stays known after it is hidden, for `/calm next`, and a list whose
+// suggestion was sent as it stands comes back if that turn is stopped with Esc. A reload forgets both.
+let lastOffer: NextStep[] = []
+let restoreOnStop: NextStep[] | null = null
+
+/** Shows the last suggestions again; false when there have been none yet. */
+async function showLastNextSteps($: Engine): Promise<boolean> {
+  if (lastOffer.length === 0) {
+    return false
+  }
+  const items = lastOffer
+  const turnId = `again-${await $.clock.now()}`
+  await update($, nextStepsAtom, () => ({ turnId, items, isLoading: false }))
+  return true
+}
+
 /** Works out the suggestions for a finished turn, unless a newer turn has taken over by then. */
 async function suggestNextSteps($: Engine, turnId: string, answer: string, openSteps: readonly string[]) {
   const offered = offeredNextSteps(answer)
   if (offered !== null) {
+    lastOffer = offered
     await update($, nextStepsAtom, () => ({ turnId, items: offered, isLoading: false }))
     return
   }
@@ -2038,18 +2055,21 @@ async function suggestNextSteps($: Engine, turnId: string, answer: string, openS
   } catch {
     items = []
   }
-  await update($, nextStepsAtom, current =>
-    current === null || current.turnId !== turnId
-      ? current
-      : items.length === 0
-        ? null
-        : { turnId, items, isLoading: false },
-  )
+  const current = await read($, nextStepsAtom)
+  if (current === null || current.turnId !== turnId) {
+    return
+  }
+  if (items.length > 0) {
+    lastOffer = items
+  }
+  await update($, nextStepsAtom, () => (items.length === 0 ? null : { turnId, items, isLoading: false }))
 }
 
-/** Drafts the prompt where the terminal has a box for it; sends it, as the person's own message, where none exists. */
+/**
+ * Drafts the prompt where the terminal has a box for it, replacing whatever is there, so a wrong pick is undone by
+ * picking another; sends it, as the person's own message, where no box exists. The list stays until something is sent.
+ */
 async function takeNextStep($: Engine, item: NextStep) {
-  await update($, nextStepsAtom, () => null)
   const filled = await $.prompt.fill({ text: item.prompt }).catch(() => null)
   if (filled?.isFilled === true) {
     return
@@ -2119,7 +2139,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
     await $.command.register({
       name: 'calm',
       description: 'Turn Calm Mode on or off (no argument flips it); recap shows the recap card; statusline on|off adds the cache meter',
-      argumentHint: '[on|off] | recap | statusline on|off | keepwarm on|off|3h|until 18:00 | weather city <name>',
+      argumentHint: '[on|off] | next | recap | statusline on|off | keepwarm on|off|3h|until 18:00 | weather city <name>',
       immediate: true,
     })
 
@@ -2145,6 +2165,16 @@ export function registerCalmMode(on: On, options?: unknown): void {
     const statusLine = /^statusline\s+(on|off)$/.exec(arg)
     if (statusLine !== null) {
       return { text: await setCacheMeter($, statusLine[1] === 'on') }
+    }
+    if (arg === 'next') {
+      if (!(await read($, settingsAtom)).nextSteps) {
+        return { text: 'Next steps is off: turn it on in the settings (⚙, Recap tab).' }
+      }
+      return {
+        text: (await showLastNextSteps($))
+          ? 'The last suggestions are back above the prompt.'
+          : 'No suggestions yet: they appear after Claude answers.',
+      }
     }
     if (arg === 'recap') {
       await showRecapNow($)
@@ -2183,8 +2213,12 @@ export function registerCalmMode(on: On, options?: unknown): void {
     runtime.isTurnRunning = true
     runtime.hasTurnStarted = true
     await update($, checklistAtom, current => (current !== null && (current.helpers ?? 0) > 0 ? { ...current, helpers: 0 } : current))
-    // Whatever was suggested belonged to the turn before this one.
-    await update($, nextStepsAtom, current => (current === null ? current : null))
+    // Sending anything hides the suggestions; a suggestion sent as it stands comes back if that turn is stopped.
+    // `/calm next` itself must not hide the list it is about to show.
+    if (text !== '' && !/^\/calm\s+next\b/i.test(text)) {
+      restoreOnStop = lastOffer.some(item => item.prompt === text) ? lastOffer : null
+      await update($, nextStepsAtom, current => (current === null ? current : null))
+    }
     if (text !== '') {
       runtime.lastPrompt = text
     }
@@ -2424,6 +2458,12 @@ export function registerCalmMode(on: On, options?: unknown): void {
     }
     runtime.isTurnRunning = false
     runtime.lastAnswer = e.answer
+    const restore = restoreOnStop
+    restoreOnStop = null
+    if (restore !== null && (e.reason === 'aborted' || e.isAborted)) {
+      const items = restore
+      await update($, nextStepsAtom, () => ({ turnId: e.turnId, items, isLoading: false }))
+    }
     const settings = await read($, settingsAtom)
     if (
       settings.nextSteps &&

@@ -800,3 +800,50 @@ test('next steps stay hidden for short answers and while Claude works', async ($
   expect(await ui.find({ key: 'next-take-0' })).toBeUndefined()
   await ui.unmount()
 })
+
+test('a wrong pick is undone by picking another: the list stays until something is sent', async ($, on) => {
+  const clock = await start($, on)
+  nextStepReply = '[{"label":"Run the tests","prompt":"Run the tests"},{"label":"Commit","prompt":"Commit the fix"}]'
+  await $.turn.complete({ answer: 'Added the pricing section and wired the buttons. Everything builds and the page renders cleanly now.', durationMs: 1000, isAborted: false, turnId: 't1', reason: 'answer' } as never)
+  await clock.advance(1)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await ui.press({ key: 'next-take-0' })
+  await ui.redraw()
+  expect(await ui.find({ key: 'next-take-1' })).toBeDefined()
+  await ui.press({ key: 'next-take-1' })
+  expect(filledPrompts).toEqual(['Run the tests', 'Commit the fix'])
+  await ui.unmount()
+})
+
+test('a sent suggestion whose turn is stopped with Esc brings the list back', async ($, on) => {
+  const clock = await start($, on)
+  nextStepReply = '[{"label":"Run the tests","prompt":"Run the tests"}]'
+  await $.turn.complete({ answer: 'Added the pricing section and wired the buttons. Everything builds and the page renders cleanly now.', durationMs: 1000, isAborted: false, turnId: 't1', reason: 'answer' } as never)
+  await clock.advance(1)
+  await $.turn.start({ text: 'Run the tests', turnId: 't2' })
+  let ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ key: 'next-take-0' })).toBeUndefined()
+  await ui.unmount()
+  await $.turn.complete({ answer: 'Added the pricing section and wired the buttons. Everything builds and the page renders cleanly now.', durationMs: 1000, isAborted: true, turnId: 't2', reason: 'aborted' } as never)
+  ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ key: 'next-take-0' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('/recap next shows the last suggestions again after they were cleared', async ($, on) => {
+  const clock = await start($, on)
+  const before = await $.command.run({ command: 'recap', args: 'next' } as never)
+  expect(JSON.stringify(before)).toContain('No suggestions yet')
+  nextStepReply = '[{"label":"Run the tests","prompt":"Run the tests"}]'
+  await $.turn.complete({ answer: 'Added the pricing section and wired the buttons. Everything builds and the page renders cleanly now.', durationMs: 1000, isAborted: false, turnId: 't1', reason: 'answer' } as never)
+  await clock.advance(1)
+  await $.turn.start({ text: 'something else', turnId: 't2' })
+  let ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ key: 'next-take-0' })).toBeUndefined()
+  await ui.unmount()
+  const ran = await $.command.run({ command: 'recap', args: 'next' } as never)
+  expect(JSON.stringify(ran)).toContain('back above the prompt')
+  ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ key: 'next-take-0' })).toBeDefined()
+  await ui.unmount()
+})
