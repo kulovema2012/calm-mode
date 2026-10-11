@@ -15,7 +15,15 @@ export type RecapSettings = {
   weatherCity: string
   /** Ask Haiku for a short name for each job, shown in the done line. */
   jobNaming: boolean
+  /** After Claude answers, suggest up to three next prompts above the input. */
+  nextSteps: boolean
 }
+
+/** One suggested next prompt: the short words on its button and the full prompt it sends. */
+export type NextStep = { label: string; prompt: string }
+
+/** The suggestions for the turn that just ended; empty while Haiku is still thinking. */
+export type NextSteps = { turnId: string; items: NextStep[]; isLoading: boolean }
 
 /** The last job (one message and Claude's answer to it), for the band's done line. */
 export type LastJob = {
@@ -89,6 +97,8 @@ declare module 'claude-code' {
       lastJob: LastJob | null
       /** Set once this process has started, to tell a resumed session from a hot reload. */
       sessionSeen: boolean
+      /** Suggested next prompts after Claude's last answer, or null when none are offered. */
+      nextSteps: NextSteps | null
     }
   }
 }

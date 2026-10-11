@@ -32,6 +32,7 @@ To add the marketplace first and choose a plugin later, type `/plugin marketplac
 
 - **Done line.** After each answer the band says how it went, e.g. `✓ All done · Make the pricing cards blue · took 1m 30s` (Cyberpunk: `◆ ALL DONE // MAKE THE PRICING CARDS BLUE // took 01:30`), or `■ Stopped` / `⚠ Ended early`. The name is a 2 to 6 word name from Haiku (Job naming, Display tab) or the start of your message.
 - **Welcome back card.** When Claude has answered and you stay quiet for a while (5 minutes by default), the band above the prompt shows how the answer ended, what Claude did in up to three short points written by Haiku (anything waiting on you is highlighted with ➜), and what you last asked. Press **Got it**, or `0` in an empty prompt, or `g` once the band or pane has focus (`ctrl+x tab`, then `g`), or type your next message to clear it. Each point ends in **↗**: click it (or focus it and press Enter) and the chat scrolls to the step it is about, such as the edit Claude made or the reply that asked you something; the ↗ after "You last asked" goes to your message. With the Pane style the pane closes first. It works in the session the card belongs to, for rows still in the chat.
+- **Next steps.** After Claude answers, the band suggests up to three prompts you are likely to send next (`1: Commit the fix   copy`). Press **1** to **3** in an empty prompt (or click) to put one in the box as a draft, or `copy` it; the desktop app, which has no box a plugin can fill, sends it straight away. One small Haiku call reads your last request, the end of Claude's answer and your skills and slash commands (a command you do not have is never offered); an answer that ends with an offer such as "Want me to commit it?" gets **Yes** and **No** with no model call. Each prompt is at most 200 characters; answers shorter than 80 characters get none. They clear when you send anything and hide while Claude works or the settings are open. Turn them off with **Next steps** in the Recap tab. Adapted from [next-steps](https://github.com/anthropics/claude-plugins-community/tree/main/next-steps) by Thariq Shihipar (MIT).
 - **After `claude --resume`** the card appears straight away, rebuilt from the saved conversation, with a warning when the prompt cache has expired.
 - **`/recap`** shows the card any time.
 - **Cache meter** in your status line, at its right end: `⚡ cache 87% ▰▰▰▰▰▰▰▰▱▱ 47m`, the share of the last request read from the prompt cache and a bar of the time left before it goes cold. Turn it on with `/recap statusline on` or the switch in the settings panel; it wraps your existing status line and `off` puts it back.
@@ -76,7 +77,7 @@ Click **⚙** beside the on/off button. One tab at a time; click a tab or press 
 | Tab | Settings |
 |---|---|
 | Display | Job naming, Cyberpunk (neon look, 🌃 button; the normal look has 🍃), Weather, Button label, Weather city |
-| Recap | Away after (1 to 120 minutes), Recap style (Band or Pane) |
+| Recap | Away after (1 to 120 minutes), Next steps, Recap style (Band or Pane) |
 | Status line | Cache in status line, Keep warm |
 
 The same settings are in `/config` under Calm Recap. **Reset** puts every setting back except the status line.

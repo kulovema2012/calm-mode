@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { cleanTitle, fallbackPoints, fitRecap, keepWarmDecision, keepWarmUntil, parsePoints, parseCitedPoints, findRow, resumeFromCacheState, parseWindowsLocation, isLocationFresh, parseMacLocation, recapLines, stepAwayMinutes, toggleLabel, weatherSymbol, weatherText, wrapText } from './calm-recap'
+import { offeredNextSteps, parseNextSteps, cleanTitle, fallbackPoints, fitRecap, keepWarmDecision, keepWarmUntil, parsePoints, parseCitedPoints, findRow, resumeFromCacheState, parseWindowsLocation, isLocationFresh, parseMacLocation, recapLines, stepAwayMinutes, toggleLabel, weatherSymbol, weatherText, wrapText } from './calm-recap'
 
 const BAND = {
   plugin: 'calm-recap',
@@ -23,14 +23,32 @@ let toasts: string[] = []
 const ANSWER = 'Made the pricing cards blue. The footer still needs your logo.'
 
 /** The world beneath the plugin, and one finished turn: "make the pricing cards blue". */
+/** What Haiku answers when asked for next steps, how often it was asked, and what a press drafted. */
+let nextStepReply = '[]'
+let nextStepAsks = 0
+let filledPrompts: string[] = []
+
 async function start($: Engine, on: On, conversation: Array<{ role: string; text: string }> = []) {
   toasts = []
+  nextStepReply = '[]'
+  nextStepAsks = 0
+  filledPrompts = []
   mock.store(on)
   const clock = mock.clock(on, { now: 1_000_000 })
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', (_$, e) => ({ text: e.answer }))
-  on('model.complete', () => ({ value: { isAnswered: true, text: '- Made the cards blue\n- Needs you: send the logo', usage: {} } }) as never)
+  on('model.complete', (_$, e) => {
+    if ((e.system ?? '').includes('Predict what the person')) {
+      nextStepAsks += 1
+      return { value: { isAnswered: true, text: nextStepReply, usage: {} } } as never
+    }
+    return { value: { isAnswered: true, text: '- Made the cards blue\n- Needs you: send the logo', usage: {} } } as never
+  })
+  on('prompt.fill', (_$, e) => {
+    filledPrompts.push(e.text)
+    return { isFilled: true, text: e.text } as never
+  })
   on('tool.register', (_$, e) => ({ value: { tool: `mcp__calm-recap__${e.name}` } }) as never)
   on('command.register', (_$, e) => ({ value: { command: e.name } }) as never)
   on('command.run', () => ({ text: '' }))
@@ -55,7 +73,7 @@ test('helpers: points, wrapping, away steps and the theme icons', () => {
   expect(wrapText('one two three four five', 9)).toEqual(['one two', 'three', 'four five'])
   expect(stepAwayMinutes(5, 1)).toBe(10)
   expect(stepAwayMinutes(1, -1)).toBe(1)
-  const settings = { buttonLabel: 'Calm Recap', cyberpunk: false, awayMinutes: 5, recapStyle: 'band', cacheMeter: false, weather: true, weatherCity: '', jobNaming: true } as const
+  const settings = { buttonLabel: 'Calm Recap', cyberpunk: false, awayMinutes: 5, recapStyle: 'band', cacheMeter: false, weather: true, weatherCity: '', jobNaming: true, nextSteps: true } as const
   expect(toggleLabel(settings, true)).toBe('🍃 Calm Recap ●')
   expect(toggleLabel({ ...settings, cyberpunk: true }, false)).toBe('🌃 CALM RECAP ⭘')
 })
@@ -740,4 +758,45 @@ test('recap lines carry their link on the last line of each point and of the que
   }
   const lines = recapLines(recap, { done: '✓ ', stopped: '■ ', sep: ' · ', rule: '─', shout: (t: string) => t, duration: () => '1m 0s', accent: 'claude', warn: 'warning', title: undefined } as never, false, 60).filter(line => line.target !== undefined)
   expect(lines.map(line => line.target)).toEqual(['tool-1', 'msg-1', 'msg-0'])
+})
+
+test('next steps: the same cleaning and the free Yes/No path as Calm Mode', () => {
+  const items = parseNextSteps('[{"label":"Run tests","prompt":"Run the tests"},{"label":"Bad","prompt":"/nope do it"}]', new Set(['commit']))
+  expect(items.map(item => item.prompt)).toEqual(['Run the tests'])
+  expect(offeredNextSteps('Fixed.\n\nWant me to commit it?')?.[0]?.label).toBe('Yes, commit it')
+  expect(offeredNextSteps('Fixed. Tests pass.')).toBeNull()
+})
+
+test('next steps show after a long answer, 1 drafts the first, and the next turn clears them', async ($, on) => {
+  const clock = await start($, on)
+  nextStepReply = '[{"label":"Send the logo","prompt":"Here is the logo for the footer"}]'
+  const long = 'Made the pricing cards blue and matched the hover colour. The footer still needs your logo before it ships.'
+  await $.turn.start({ text: 'make the pricing cards blue', turnId: 't1' })
+  await $.turn.complete({ answer: long, durationMs: 90_000, isAborted: false, turnId: 't1', reason: 'answer' } as never)
+  await clock.advance(1)
+  let ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(nextStepAsks).toBe(1)
+  expect(await ui.find({ type: 'Text', text: /^Next$/ })).toBeDefined()
+  expect(JSON.stringify(await ui.find({ key: 'next-take-0' }))).toContain('"hotkey":"1"')
+  await ui.press({ key: 'next-take-0' })
+  expect(filledPrompts).toEqual(['Here is the logo for the footer'])
+  await ui.unmount()
+
+  await $.turn.complete({ answer: long, durationMs: 1000, isAborted: false, turnId: 't2', reason: 'answer' } as never)
+  await clock.advance(1)
+  await $.turn.start({ text: 'thanks', turnId: 't3' })
+  ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ key: 'next-take-0' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('next steps stay hidden for short answers and while Claude works', async ($, on) => {
+  const clock = await start($, on)
+  nextStepReply = '[{"label":"Go","prompt":"Go on"}]'
+  await finishTurn($)
+  await clock.advance(1)
+  expect(nextStepAsks).toBe(0)
+  const ui = await $.ui.mount({ ...BAND, props: { ...BAND.props, isWorking: true }, surface: 'terminal' })
+  expect(await ui.find({ key: 'next-take-0' })).toBeUndefined()
+  await ui.unmount()
 })

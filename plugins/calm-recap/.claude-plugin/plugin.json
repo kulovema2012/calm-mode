@@ -1,6 +1,6 @@
 {
   "name": "calm-recap",
-  "version": "0.10.7",
+  "version": "0.11.0",
   "description": "Calm Recap: a Welcome back card when you return to the keyboard, and the prompt cache's hit rate and time left in your status line.",
   "author": {
     "name": "Newk"
@@ -30,6 +30,12 @@
       "title": "Away after (minutes)",
       "description": "Minutes of quiet after Claude answers before the Welcome back card appears (1 to 120).",
       "default": 5
+    },
+    "nextSteps": {
+      "type": "boolean",
+      "title": "Next steps",
+      "description": "After Claude answers, suggest up to three next prompts above the input (one small Haiku call, none when Claude just asked a yes or no question). Press 1 to 3 in an empty prompt to use one.",
+      "default": true
     },
     "recapStyle": {
       "type": "string",
