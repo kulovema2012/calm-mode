@@ -1503,7 +1503,14 @@ export function registerCalmRecap(on: On, options?: unknown): void {
           {buttons}
         </Box>
       )
-      const gotIt = <Button key="recap-ok" label="Got it (g)" hotkey="g" variant="primary" onPress={() => dismissRecap($)} />
+      // One Button holds one hotkey: 0 answers from an empty prompt, g once the band has focus.
+      const gotIt = (
+        <Box flexDirection="row">
+          <Button key="recap-ok-g" label="✓" hotkey="g" plain dimColor onPress={() => dismissRecap($)} />
+          <Text> </Text>
+          <Button key="recap-ok" label="Got it (0 or g)" hotkey="0" variant="primary" onPress={() => dismissRecap($)} />
+        </Box>
+      )
       if (settings.recapStyle === 'pane') {
         return (
           <Box flexDirection="column" width={columns} key={`recap-${recapTick}`}>
@@ -1596,7 +1603,9 @@ export function registerCalmRecap(on: On, options?: unknown): void {
             )
         ))}
         <Box flexDirection="row" justifyContent="flex-end" width={width}>
-          <Button key="recap-pane-ok" label="Got it (g)" hotkey="g" variant="primary" onPress={() => dismissRecap($)} />
+          <Button key="recap-pane-ok-g" label="✓" hotkey="g" plain dimColor onPress={() => dismissRecap($)} />
+          <Text> </Text>
+          <Button key="recap-pane-ok" label="Got it (0 or g)" hotkey="0" variant="primary" onPress={() => dismissRecap($)} />
         </Box>
       </Box>
     )

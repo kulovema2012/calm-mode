@@ -13,7 +13,7 @@ What Claude did
 ────────────────────────────────────────────────────────────────
 You last asked
     "make the pricing cards blue"
-                                                      [ Got it (g) ]
+                                            g: ✓ [ Got it (0 or g) ]
 ```
 
 ## Install
@@ -31,7 +31,7 @@ To add the marketplace first and choose a plugin later, type `/plugin marketplac
 ## What it does
 
 - **Done line.** After each answer the band says how it went, e.g. `✓ All done · Make the pricing cards blue · took 1m 30s` (Cyberpunk: `◆ ALL DONE // MAKE THE PRICING CARDS BLUE // took 01:30`), or `■ Stopped` / `⚠ Ended early`. The name is a 2 to 6 word name from Haiku (Job naming, Display tab) or the start of your message.
-- **Welcome back card.** When Claude has answered and you stay quiet for a while (5 minutes by default), the band above the prompt shows how the answer ended, what Claude did in up to three short points written by Haiku (anything waiting on you is highlighted with ➜), and what you last asked. Press **Got it** (or `g` while the band or pane has focus: `ctrl+x tab`, then `g`) or type your next message to clear it. Each point ends in **↗**: click it (or focus it and press Enter) and the chat scrolls to the step it is about, such as the edit Claude made or the reply that asked you something; the ↗ after "You last asked" goes to your message. With the Pane style the pane closes first. It works in the session the card belongs to, for rows still in the chat.
+- **Welcome back card.** When Claude has answered and you stay quiet for a while (5 minutes by default), the band above the prompt shows how the answer ended, what Claude did in up to three short points written by Haiku (anything waiting on you is highlighted with ➜), and what you last asked. Press **Got it**, or `0` in an empty prompt, or `g` once the band or pane has focus (`ctrl+x tab`, then `g`), or type your next message to clear it. Each point ends in **↗**: click it (or focus it and press Enter) and the chat scrolls to the step it is about, such as the edit Claude made or the reply that asked you something; the ↗ after "You last asked" goes to your message. With the Pane style the pane closes first. It works in the session the card belongs to, for rows still in the chat.
 - **After `claude --resume`** the card appears straight away, rebuilt from the saved conversation, with a warning when the prompt cache has expired.
 - **`/recap`** shows the card any time.
 - **Cache meter** in your status line, at its right end: `⚡ cache 87% ▰▰▰▰▰▰▰▰▱▱ 47m`, the share of the last request read from the prompt cache and a bar of the time left before it goes cold. Turn it on with `/recap statusline on` or the switch in the settings panel; it wraps your existing status line and `off` puts it back.
