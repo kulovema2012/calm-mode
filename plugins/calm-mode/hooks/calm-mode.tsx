@@ -2960,7 +2960,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
         case 'done':
           return (
             <Text wrap="truncate" color={theme.done}>
-              {`${theme.icons.done}${theme.shout('All done')}${sep}${title}${sep}took ${elapsed}${settings.clock && list.finishedAt !== null ? `${sep}at ${clockTime(list.finishedAt).slice(-5)}` : ''}`}
+              {`${theme.icons.done}${theme.shout('All done')}${sep}${title}${sep}took ${elapsed}`}
             </Text>
           )
         default: {
