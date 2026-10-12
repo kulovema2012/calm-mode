@@ -759,11 +759,12 @@ test('Reset puts every setting back but leaves the status line alone', { options
   await ui.unmount()
 })
 
-test('the job timer starts in the same column as the progress bars', async ($, on) => {
+test('the job timer starts in the same column as the progress bars on a wide band', async ($, on) => {
   await start($, on)
   await $.tool.call({ tool: PLAN_TOOL, steps: ['Read your notes', 'Build the page'] } as never)
   await $.tool.call({ tool: PROGRESS_TOOL, task: 'Build the page', percent: 60 } as never)
-  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  const ui = await $.ui.mount({ ...BAND, props: { ...BAND.props, bodyColumns: 160 }, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /^[A-Z][a-z]{2} \d{1,2} [A-Z][a-z]{2} \d\d:\d\d +$/ })).toBeDefined()
   const title = await ui.find({ type: 'Text', text: /^Build my landing page +$/ })
   const timer = await ui.find({ type: 'Text', text: /^⏱ / })
   const name = await ui.find({ type: 'Text', text: /^Build the page +$/ })
@@ -1465,4 +1466,18 @@ test('the clock reads the date and 24-hour time in local time, and is on unless 
   expect(clockTime(new Date(2026, 0, 3, 21, 46, 59).getTime())).toBe('Sat 3 Jan 21:46')
   expect(normalizeSettings(undefined).clock).toBe(true)
   expect(normalizeSettings({ clock: false }).clock).toBe(false)
+})
+
+test('on a narrow band the clock drops the date and the title gives way, so the job timer stays in view', async ($, on) => {
+  await start($, on)
+  await $.tool.call({ tool: PLAN_TOOL, steps: ['Read your notes', 'Build the page'] } as never)
+  const ui = await $.ui.mount({ ...BAND, props: { ...BAND.props, bodyColumns: 60 }, surface: 'terminal' })
+  const clock = await ui.find({ type: 'Text', text: /^\d\d:\d\d +$/ })
+  const title = await ui.find({ type: 'Text', text: /^Build my landing page/ })
+  const timer = await ui.find({ type: 'Text', text: /^⏱ / })
+  expect(clock).toBeDefined()
+  expect(timer).toBeDefined()
+  // title, timer and clock leave room for the gear and the toggle (at least 12 columns) in 60
+  expect(String(title?.text).length + String(timer?.text).length + String(clock?.text).length).toBeLessThanOrEqual(60 - 12)
+  await ui.unmount()
 })

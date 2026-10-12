@@ -1,6 +1,6 @@
 {
   "name": "calm-mode",
-  "version": "0.21.1",
+  "version": "0.21.2",
   "description": "Calm Mode: hides tool calls and shows one friendly checklist above the prompt while Claude works.",
   "author": {
     "name": "Newk"
@@ -77,7 +77,7 @@
     "clock": {
       "type": "boolean",
       "title": "Clock",
-      "description": "Show the date and time (24-hour, your time zone) beside the job timer in the band's header, and the time a job finished.",
+      "description": "Show the date and time (24-hour, your time zone) beside the weather at the band's right (time only when the band is narrow), and the time a job finished.",
       "default": true
     },
     "nextSteps": {

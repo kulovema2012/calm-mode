@@ -37,6 +37,7 @@ const FILE_NAME = new RegExp(`[\\w.-]*\\.(?:${CODE_EXTENSIONS})\\b`, 'gi')
 export const enabledAtom = atom({ plugin: 'calm-mode', key: 'calmModeEnabled' } as const, true)
 export const checklistAtom = atom({ plugin: 'calm-mode', key: 'checklist' } as const, null)
 export const tickAtom = atom({ plugin: 'calm-mode', key: 'tick' } as const, 0)
+export const minuteAtom = atom({ plugin: 'calm-mode', key: 'minute' } as const, 0)
 
 /**
  * Turns any step or job name into plain words: no code, paths or file names,
@@ -220,6 +221,7 @@ const runtime: {
   musicWanted: { key: string; file: string; volume: number; asset: string } | null
   musicLease: Timer | null
   weatherTimer: Timer | null
+  clockTimer: Timer | null
   keepWarmTimer: Timer | null
   shuffle: { jobId: number; track: string } | null
   awayTimer: Timer | null
@@ -240,6 +242,7 @@ const runtime: {
   musicWanted: null,
   musicLease: null,
   weatherTimer: null,
+  clockTimer: null,
   keepWarmTimer: null,
   shuffle: null,
   awayTimer: null,
@@ -320,7 +323,7 @@ export const SETTING_HELP: Record<keyof CalmSettings, string> = {
   weather: 'Temperature now, by your city',
   weatherCity: 'Blank finds it from your internet address',
   nextSteps: 'Up to 3 next prompts after each answer, keys 1 to 3',
-  clock: 'Date and time beside the job timer',
+  clock: 'Date and time beside the weather',
 }
 
 const SETTING_NAMES: Record<keyof CalmSettings, string> = {
@@ -383,6 +386,7 @@ async function setEnabled($: Engine, isEnabled: boolean) {
   await $.store.set(STORE_KEY, isEnabled)
   await syncMusic($)
   await syncWeather($)
+  await syncClock($)
   $.ui.toast(
     isEnabled ? 'Calm Mode on: technical details are hidden' : 'Calm Mode off: showing everything again',
   )
@@ -543,6 +547,7 @@ async function setOption<K extends keyof CalmSettings>($: Engine, field: K, valu
   await update($, settingsHintAtom, () => settingHint(field, next[field]))
   await syncMusic($)
   await syncWeather($)
+  await syncClock($)
   if (field === 'weatherCity' && next.weather) {
     // The timer is already running; show the new city now rather than within 15 minutes.
     await refreshWeather($).catch(() => undefined)
@@ -1513,6 +1518,22 @@ async function syncWeather($: Engine) {
   }
 }
 
+/** Redraws the clock as each minute turns while it is shown; no timer runs while it is off. */
+async function syncClock($: Engine) {
+  const isOn = (await read($, enabledAtom)) && (await read($, settingsAtom)).clock
+  if (isOn && runtime.clockTimer === null) {
+    const bump = () => void update($, minuteAtom, n => (n ?? 0) + 1)
+    const now = await $.clock.now()
+    runtime.clockTimer = $.clock.after(60_000 - (now % 60_000), () => {
+      bump()
+      runtime.clockTimer = $.clock.every(60_000, bump)
+    })
+  } else if (!isOn && runtime.clockTimer !== null) {
+    runtime.clockTimer.cancel()
+    runtime.clockTimer = null
+  }
+}
+
 // ── Keep warm ───────────────────────────────────────────────────────────────
 // Keeps a 1-hour prompt cache from expiring while you are away: about 5 minutes before it would, one hidden
 // question over this conversation ($.model.fork) reads it from the cache, which restarts the hour. Nothing is
@@ -2113,6 +2134,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
     await update($, enabledAtom, () => (typeof stored === 'boolean' ? stored : true))
     await update($, settingsAtom, () => configured)
     void syncWeather($).catch(() => undefined)
+    void syncClock($).catch(() => undefined)
     if ((await read($, keepWarmAtom))?.isOn === true) {
       ensureKeepWarmTimer($)
     }
@@ -2621,7 +2643,8 @@ export function registerCalmMode(on: On, options?: unknown): void {
     const isSettingsOpen = await read($, settingsOpenAtom)
     const recap = isEnabled ? await read($, recapAtom) : null
     const weather = isEnabled && settings.weather ? await read($, weatherAtom) : null
-    const weatherCell = weather === null ? '' : `${weatherText(weather)}  `
+    // Read so the band redraws as each minute turns.
+    await read($, minuteAtom)
     const theme = settings.cyberpunk ? CYBERPUNK : CLASSIC
     const list = isEnabled ? await read($, checklistAtom) : null
     const tick = list !== null && (list.phase === 'working' || list.phase === 'needsYou') ? await read($, tickAtom) : 0
@@ -2629,8 +2652,32 @@ export function registerCalmMode(on: On, options?: unknown): void {
     const columns = Math.max(20, e.props.bodyColumns)
 
     const label = toggleLabel(settings, isEnabled)
+    // The header keeps room for its title column and the job timer; when the right side would crowd it, the
+    // clock drops the date, then the weather drops the city.
+    const fullClock = isEnabled && settings.clock ? clockTime(now) : ''
+    const fullWeather = weather === null ? '' : weatherText(weather)
+    const shortWeather = weather === null ? '' : weatherText({ ...weather, city: '' })
+    const cell = (text: string) => (text === '' ? '' : `${text}  `)
+    // The job's title (up to the bar column) and the timer after it.
+    const titleWidth = list === null ? 0 : `${theme.headerMark}${theme.shout(list.title)}`.length + 1
+    const headerNeed =
+      list === null ? 0 : Math.min(3 + Math.max(6, Math.min(NAME_LIMIT, columns - 2 - 1 - METER_CELLS - 9)), titleWidth) + 10
+    const fixedWidth = theme.gear.length + 1 + label.length + 4
+    const layouts: Array<[string, string]> = [
+      [cell(fullClock), cell(fullWeather)],
+      [cell(fullClock.slice(-5)), cell(fullWeather)],
+      [cell(fullClock.slice(-5)), cell(shortWeather)],
+    ]
+    const [clockCell, weatherCell] =
+      layouts.find(([clock, place]) => columns - fixedWidth - clock.length - place.length - 1 >= headerNeed) ??
+      layouts[2] ?? ['', '']
     const buttons = (
       <Box flexDirection="row">
+        {clockCell === '' ? null : (
+          <Text dimColor={!settings.cyberpunk} color={settings.cyberpunk ? theme.accent : undefined}>
+            {clockCell}
+          </Text>
+        )}
         {weatherCell === '' ? null : (
           <Text dimColor={!settings.cyberpunk} color={settings.cyberpunk ? theme.accent : undefined}>
             {weatherCell}
@@ -2653,7 +2700,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
         />
       </Box>
     )
-    const buttonsWidth = weatherCell.length + theme.gear.length + 1 + label.length + 4
+    const buttonsWidth = clockCell.length + weatherCell.length + fixedWidth
     const headerRoom = Math.max(4, columns - buttonsWidth - 1)
 
     // ── Settings: one tab at a time, each row "name · switch · what it does" ──
@@ -2913,14 +2960,15 @@ export function registerCalmMode(on: On, options?: unknown): void {
         case 'done':
           return (
             <Text wrap="truncate" color={theme.done}>
-              {`${theme.icons.done}${theme.shout('All done')}${sep}${title}${sep}took ${elapsed}${settings.clock && list.finishedAt !== null ? `${sep}at ${clockTime(list.finishedAt)}` : ''}`}
+              {`${theme.icons.done}${theme.shout('All done')}${sep}${title}${sep}took ${elapsed}${settings.clock && list.finishedAt !== null ? `${sep}at ${clockTime(list.finishedAt).slice(-5)}` : ''}`}
             </Text>
           )
         default: {
           // The timer starts in the column the progress bars start in, so it reads as part of that column.
           const titleText = `${theme.headerMark}${title}`
+          const titleRoom = Math.max(4, Math.min(barColumn, headerRoom - 10))
           const titleCell =
-            titleText.length > barColumn - 1 ? `${titleText.slice(0, barColumn - 2)}… ` : titleText.padEnd(barColumn)
+            titleText.length > titleRoom - 1 ? `${titleText.slice(0, titleRoom - 2)}… ` : titleText.padEnd(titleRoom)
           // The step row carries the full subagent sign; the header, which the buttons crowd, keeps only
           // a short one, and only when no step row shows it.
           const helpers = list.helpers ?? 0
@@ -2929,7 +2977,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
             <Text wrap="truncate">
               <Text bold color={theme.title}>{titleCell}</Text>
               <Text dimColor={!settings.cyberpunk} color={settings.cyberpunk ? theme.accent : undefined}>
-                {`⏱ ${elapsed}${settings.clock ? `${sep}${clockTime(now)}` : ''}`}
+                {`⏱ ${elapsed}`}
               </Text>
               {helpers > 0 && !isHelperRowShown ? (
                 <Text bold color={theme.accent}>{`${sep}${SPINNER[tick % SPINNER.length]} ${helpers}`}</Text>

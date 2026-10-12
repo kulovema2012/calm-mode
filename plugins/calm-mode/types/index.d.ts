@@ -61,7 +61,7 @@ export type CalmSettings = {
   weatherCity: string
   /** After Claude answers, suggest up to three next prompts above the input. */
   nextSteps: boolean
-  /** Show the time of day beside the job timer in the band's header. */
+  /** Show the date and time beside the weather at the band's right. */
   clock: boolean
 }
 
@@ -119,6 +119,8 @@ declare module 'claude-code' {
       calmModeEnabled: boolean
       checklist: Checklist | null
       tick: number
+      /** Bumped as each minute turns while the clock shows, so it stays current. */
+      minute: number
       settings: CalmSettings
       isSettingsOpen: boolean
       recap: AwayRecap | null
