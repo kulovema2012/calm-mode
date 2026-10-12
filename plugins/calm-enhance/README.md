@@ -57,6 +57,7 @@ The button shows once the draft has at least two words and ten characters, so "Y
   }
   ```
   `app:cycleDiffBase` is only used by the `/diff` panel, so it is free at the prompt. While the button shows, Ctrl+E no longer jumps to the end of the line (End still does).
+- Or **Ctrl+X, then E**, which leaves Ctrl+E alone: use `"ctrl+x e": "app:cycleDiffBase"` in the same place.
 - Without the binding, click the button. (**Ctrl+X Tab** focuses the band above the prompt, not the footer, so it cannot reach this button.)
 - A number key cannot work here: the button is for a box that already holds your draft, and a digit typed there just goes into the draft.
 
