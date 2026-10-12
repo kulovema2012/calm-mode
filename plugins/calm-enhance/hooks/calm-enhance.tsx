@@ -45,7 +45,8 @@ Use whatever shape makes the prompt most precise: one sentence, a numbered list 
 </format>
 
 <boundaries>
-- Every sentence you add traces back to the draft or the conversation. Where the draft leaves a real choice open and the conversation doesn't settle it, leave it open or turn it into a question for Claude to raise; the choice is the author's.
+- Every sentence you add traces back to the draft or the conversation. Where the draft leaves a real choice open and the conversation doesn't settle it, leave it open; the choice is the author's.
+- When the draft is ambiguous, meaning it can reasonably be read as asking for different things and the conversation doesn't settle which, write out what is clear and end the prompt with this sentence, in the author's language: "Before you start, interview me with questions until you understand comprehensively what I want." A draft whose meaning the conversation makes clear gets no such sentence.
 - Copy every placeholder of the form [Pasted text #N ...] or [Image #N] into the result exactly as written, character for character, in a sensible place. They stand for content you cannot see, and the prompt breaks without them.
 - Leave out filler Claude Code already acts on by default: role lines ("You are an expert..."), "think step by step", "double-check your work", "be thorough", and requests to explain its reasoning.
 - Write in a calm, plain tone, without capital-letter emphasis or words like CRITICAL and MUST.
@@ -115,6 +116,21 @@ Rename getUser to fetchUser in src/api/users.ts and update every caller.
 </draft>
 <enhanced>
 Rename \`getUser\` to \`fetchUser\` in \`src/api/users.ts\` and update every caller.
+</enhanced>
+</example>
+<example>
+<conversation>
+[user] the landing page is live now
+
+[assistant] Deployed to Vercel. The hero, pricing and FAQ sections are up.
+</conversation>
+<draft>
+make it better
+</draft>
+<enhanced>
+Improve the landing page that is now live on Vercel (hero, pricing and FAQ sections).
+
+Before you start, interview me with questions until you understand comprehensively what I want.
 </enhanced>
 </example>
 </examples>`
@@ -300,7 +316,7 @@ export function registerCalmEnhance(on: On, options?: unknown): void {
     if (isBusy) {
       return (
         <Box flexDirection="row" justifyContent="space-between">
-          <Box flexShrink={1}>{below}</Box>
+          <Box flexGrow={1} flexShrink={1}>{below}</Box>
           <Text dimColor>{` Enhancing with ${modelName}…`}</Text>
         </Box>
       )
@@ -308,7 +324,7 @@ export function registerCalmEnhance(on: On, options?: unknown): void {
     // ctrl+e is bound to this action in ~/.claude/keybindings.json; without it, ctrl+x tab then e.
     return (
       <Box flexDirection="row" justifyContent="space-between">
-        <Box flexShrink={1}>{below}</Box>
+        <Box flexGrow={1} flexShrink={1}>{below}</Box>
         <Box flexShrink={0}>
           <Button
             key="enhance"

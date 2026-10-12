@@ -41,6 +41,7 @@ A slow wave of red, dark red, black and gray runs across your draft in the promp
 - **Vague words get specific.** "this", "that error", "the other plugin" become the exact file, error, version or step the conversation points to.
 - **Pasted text and images are kept.** Every `[Pasted text #N …]` and `[Image #N]` placeholder must come back unchanged. If the rewrite loses one, your draft stays as it was and a toast says which one, because the pasted content would be lost with it.
 - **Any format that makes it precise.** One sentence, numbered steps, or short labelled parts; precision over brevity, with no padding.
+- **An unclear draft asks to be interviewed.** When a draft could mean different things and the conversation doesn't settle which ("make it better"), the rewrite keeps what is clear and ends with "Before you start, interview me with questions until you understand comprehensively what I want.", so Claude asks before guessing.
 - Typos fixed, your language kept (a Thai draft stays Thai), and decisions already made carried over. A draft that is already clear comes back with only typo fixes.
 
 The button shows once the draft has at least two words and ten characters, so "Yep" or "Go ahead" get none.
@@ -69,7 +70,7 @@ The button shows once the draft has at least two words and ten characters, so "Y
 - If you keep typing while it works, your version stays.
 - It works in the terminal. The desktop app draws its own prompt box, which a plugin cannot read or fill, so expect it not to work there (no button press can reach the draft, and the wave cannot be drawn).
 - Pressing it again right after a rewrite gives **Revert**, which brings your draft back. Editing the rewritten text, or sending it, accepts the rewrite and the next press enhances again.
-- Its button sits at the right end of the hint line under the prompt, so a tall band above the prompt (Calm Mode's checklist, a recap) never pushes it out of view, and Claude Code's own hints stay on the left. It shows only while the box holds a draft.
+- Its button sits at the right end of the bottom line, the hint line under the prompt (the status line section itself takes only plain text from a plugin, so a clickable button cannot go there), so a tall band above the prompt (Calm Mode's checklist, a recap) never pushes it out of view, and Claude Code's own hints stay on the left. It shows only while the box holds a draft.
 
 ## Credit
 

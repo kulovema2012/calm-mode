@@ -35,6 +35,7 @@ test('the instructions cover numbered picks, placeholders, Thai and free format'
   expect(SYSTEM).toContain('[Pasted text #N ...] or [Image #N]')
   expect(SYSTEM).toContain('A Thai draft stays Thai')
   expect(SYSTEM).toContain('Precision matters more than brevity')
+  expect(SYSTEM).toContain('interview me with questions until you understand comprehensively what I want')
 })
 
 test('the wave paints every character and moves one step per frame', () => {
