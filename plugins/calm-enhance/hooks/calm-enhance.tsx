@@ -300,9 +300,9 @@ export function registerCalmEnhance(on: On, options?: unknown): void {
     return next(e)
   })
 
-  // The button sits at the right end of the hint line under the prompt (`? for shortcuts`), where a tall band
-  // above the prompt can never push it out of view; the engine's own line, pills and all, stays on its left.
-  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
+  // The button sits at the right of the footer under the prompt, beside Claude Code's mode labels and other
+  // plugins' footer entries (Calm Mode's 🍃 Calm ▾), where a tall band above the prompt never pushes it out of view.
+  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
     const isBusy = await read($, isBusyAtom)
     const hasDraft = await read($, hasDraftAtom)
     // Revert stays reachable even if the enhanced text is blank.
@@ -313,28 +313,25 @@ export function registerCalmEnhance(on: On, options?: unknown): void {
     const below = await next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
     const modelName = settings.model === 'haiku' ? 'Haiku' : 'Sonnet'
-    if (isBusy) {
-      return (
-        <Box flexDirection="row" justifyContent="space-between">
-          <Box flexGrow={1} flexShrink={1}>{below}</Box>
-          <Text dimColor>{` Enhancing with ${modelName}…`}</Text>
-        </Box>
-      )
-    }
     // ctrl+e is bound to this action in ~/.claude/keybindings.json; without it, ctrl+x tab then e.
+    const own = isBusy ? (
+      <Text dimColor>{`✨ Enhancing with ${modelName}…`}</Text>
+    ) : (
+      <Button
+        key="enhance"
+        label={canRevert ? '↩ Revert' : '✨ Enhance'}
+        hotkey="e"
+        action="app:cycleDiffBase"
+        plain
+        variant={canRevert ? 'secondary' : 'primary'}
+        onPress={() => (canRevert ? revert($) : enhance($, settings))}
+      />
+    )
     return (
-      <Box flexDirection="row" justifyContent="space-between">
-        <Box flexGrow={1} flexShrink={1}>{below}</Box>
-        <Box flexShrink={0}>
-          <Button
-            key="enhance"
-            label={`${canRevert ? 'Revert' : 'Enhance'}${e.surface === 'terminal' ? ' ⌃E' : ''}`}
-            hotkey="e"
-            action="app:cycleDiffBase"
-            variant={canRevert ? 'secondary' : 'primary'}
-            onPress={() => (canRevert ? revert($) : enhance($, settings))}
-          />
-        </Box>
+      <Box flexDirection="row">
+        {below === null || below === undefined ? null : below}
+        {below === null || below === undefined ? null : <Text>{'  '}</Text>}
+        {own}
       </Box>
     )
   })

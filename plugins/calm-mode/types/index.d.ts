@@ -72,7 +72,7 @@ export type NextStep = { label: string; prompt: string }
 export type NextSteps = { turnId: string; items: NextStep[]; isLoading: boolean }
 
 /** The settings panel's tabs. */
-export type SettingsTab = 'display' | 'music' | 'recap' | 'status'
+export type SettingsTab = 'display' | 'place' | 'music' | 'recap' | 'status'
 
 /** Keep-warm for this session: on or off, when it stops, pings in a row, and how long the last ping keeps the cache. */
 export type KeepWarm = {

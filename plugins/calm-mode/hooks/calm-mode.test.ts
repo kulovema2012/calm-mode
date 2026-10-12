@@ -831,10 +831,13 @@ test('by default the weather shows beside the gear and refreshes every 15 minute
   await ui.unmount()
 })
 
-test('the weather switch lives in the Display tab', async ($, on) => {
+test('the weather and the clock live in the Place & time tab', async ($, on) => {
   await start($, on)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   await ui.press({ key: 'calm-settings' })
+  expect(await ui.find({ key: 'set-weather' })).toBeUndefined()
+  await ui.press({ key: 'tab-place' })
+  expect(await ui.find({ key: 'set-clock' })).toBeDefined()
   expect((await ui.find({ key: 'set-weather' }))?.props.label).toBe('◉')
   expect(await ui.find({ type: 'Text', text: /Temperature now, by your city/ })).toBeDefined()
   await ui.unmount()
@@ -1480,4 +1483,22 @@ test('on a narrow band the clock drops the date and the title gives way, so the 
   // title, timer and clock leave room for the gear and the toggle (at least 12 columns) in 60
   expect(String(title?.text).length + String(timer?.text).length + String(clock?.text).length).toBeLessThanOrEqual(60 - 12)
   await ui.unmount()
+})
+
+test('the Calm button at the right of the footer opens and closes the settings panel', async ($, on) => {
+  await start($, on)
+  const footer = await $.ui.mount({ plugin: 'calm-mode', component: 'SessionMode', props: { modes: [] }, surface: 'terminal' })
+  expect((await footer.find({ key: 'calm-footer' }))?.props.label).toBe('🍃 Calm ▾')
+  await footer.press({ key: 'calm-footer' })
+  await footer.unmount()
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ key: 'tab-place' })).toBeDefined()
+  await ui.unmount()
+  const again = await $.ui.mount({ plugin: 'calm-mode', component: 'SessionMode', props: { modes: [] }, surface: 'terminal' })
+  expect((await again.find({ key: 'calm-footer' }))?.props.label).toBe('🍃 Calm ▴')
+  await again.press({ key: 'calm-footer' })
+  await again.unmount()
+  const closed = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await closed.find({ key: 'tab-place' })).toBeUndefined()
+  await closed.unmount()
 })

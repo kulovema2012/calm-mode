@@ -298,6 +298,7 @@ async function finish($: Engine, fn: (list: Checklist) => Checklist) {
 
 export const SETTINGS_TABS: ReadonlyArray<{ id: SettingsTab; name: string }> = [
   { id: 'display', name: 'Display' },
+  { id: 'place', name: 'Place & time' },
   { id: 'music', name: 'Music' },
   { id: 'recap', name: 'Recap' },
   { id: 'status', name: 'Status line' },
@@ -2625,6 +2626,31 @@ export function registerCalmMode(on: On, options?: unknown): void {
     return next(e)
   })
 
+  // A button at the right of the footer opens and closes the settings panel from anywhere; other plugins'
+  // footer entries (Calm Enhance's, say) and Claude Code's own mode labels stay beside it.
+  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
+    const below = await next(e)
+    const { Box, Button, Text } = $.ui.resolve(e)
+    const settings = await read($, settingsAtom)
+    const isOpen = await read($, settingsOpenAtom)
+    const own = (
+      <Button
+        key="calm-footer"
+        label={`${settings.cyberpunk ? '🌃' : '🍃'} Calm ${isOpen ? '▴' : '▾'}`}
+        plain
+        dimColor={!isOpen}
+        onPress={() => update($, settingsOpenAtom, open => !open)}
+      />
+    )
+    return (
+      <Box flexDirection="row">
+        {below === null || below === undefined ? null : below}
+        {below === null || below === undefined ? null : <Text>{'  '}</Text>}
+        {own}
+      </Box>
+    )
+  })
+
   // Other plugins' bands (Calm Enhance's button, say) draw on top of Calm Mode's, so they stay in view
   // without scrolling the band; their row comes out of Calm Mode's own space.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
@@ -2737,6 +2763,8 @@ export function registerCalmMode(on: On, options?: unknown): void {
         row('r-hide', name('Hide tool rows'), toggle('set-hide', settings.hideToolRows, () => setOption($, 'hideToolRows', !settings.hideToolRows)), about(SETTING_HELP.hideToolRows)),
         row('r-naming', name('Job naming'), toggle('set-naming', settings.jobNaming, () => setOption($, 'jobNaming', !settings.jobNaming)), about(SETTING_HELP.jobNaming)),
         row('r-cyber', name('Cyberpunk'), toggle('set-cyber', settings.cyberpunk, () => setOption($, 'cyberpunk', !settings.cyberpunk)), about(SETTING_HELP.cyberpunk)),
+      ],
+      place: [
         row('r-clock', name('Clock'), toggle('set-clock', settings.clock, () => setOption($, 'clock', !settings.clock)), about(SETTING_HELP.clock)),
         row('r-weather', name('Weather'), toggle('set-weather', settings.weather, () => setOption($, 'weather', !settings.weather)), about(settings.weather ? (weather?.source === 'ip' ? 'City is a guess (?): set Weather city' : SETTING_HELP.weather) : 'City found from your internet address')),
       ],
@@ -2769,16 +2797,17 @@ export function registerCalmMode(on: On, options?: unknown): void {
     }
     const tabInputs: Record<SettingsTab, JSX.Element[]> =
       Input === undefined
-        ? { display: [], music: [], recap: [], status: [] }
+        ? { display: [], place: [], music: [], recap: [], status: [] }
         : {
-            display: [<Input key="set-label" label={`  ${'Button label'.padEnd(labelWidth)}`} placeholder={DEFAULT_LABEL} value={settings.buttonLabel} submitLabel="save" onSubmit={value => setOption($, 'buttonLabel', value)} />, <Input key="set-weather-city" label={`  ${'Weather city'.padEnd(labelWidth)}`} placeholder="automatic (internet address)" value={settings.weatherCity} submitLabel="save" onSubmit={value => setOption($, 'weatherCity', value)} />],
+            display: [<Input key="set-label" label={`  ${'Button label'.padEnd(labelWidth)}`} placeholder={DEFAULT_LABEL} value={settings.buttonLabel} submitLabel="save" onSubmit={value => setOption($, 'buttonLabel', value)} />],
+            place: [<Input key="set-weather-city" label={`  ${'Weather city'.padEnd(labelWidth)}`} placeholder="automatic (internet address)" value={settings.weatherCity} submitLabel="save" onSubmit={value => setOption($, 'weatherCity', value)} />],
             music: [<Input key="set-music-file" label={`  ${'Music file'.padEnd(labelWidth)}`} placeholder="built-in tracks" value={settings.musicFile} submitLabel="save" onSubmit={value => setOption($, 'musicFile', value)} />],
             recap: [],
             status: [],
           }
 
     const settingsRow = isSettingsOpen ? (
-      <Box key="settings" flexDirection="column">
+      <Box key="settings" flexDirection="column" borderStyle="round" borderColor={theme.accent} paddingX={1} width={columns}>
         <Box flexDirection="row" flexWrap="wrap">
           <Text bold color={theme.title ?? theme.accent}>{`${theme.gear} ${theme.shout('Settings')}  `}</Text>
           {SETTINGS_TABS.map((t, i) => (
@@ -2798,7 +2827,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
           <Button key="set-reset" label="Reset" dimColor onPress={() => resetSettings($)} />
         </Box>
         <Text dimColor color={settings.cyberpunk ? theme.title : undefined}>
-          {(settings.cyberpunk ? '┄' : '─').repeat(Math.min(columns, 80))}
+          {(settings.cyberpunk ? '┄' : '─').repeat(Math.max(4, Math.min(columns - 4, 80)))}
         </Text>
         {tabRows[tab]}
         {tabInputs[tab]}
@@ -2808,8 +2837,8 @@ export function registerCalmMode(on: On, options?: unknown): void {
       </Box>
     ) : null
 
-    // Rows the open settings panel takes: tabs, a rule, the tab's rows and fields, and the hint.
-    const settingsRows = isSettingsOpen ? 2 + tabRows[tab].length + tabInputs[tab].length + (hint === null ? 0 : 1) : 0
+    // Rows the open settings panel takes: its border, tabs, a rule, the tab's rows and fields, and the hint.
+    const settingsRows = isSettingsOpen ? 4 + tabRows[tab].length + tabInputs[tab].length + (hint === null ? 0 : 1) : 0
 
     // ── Next steps: hidden while Claude works and while settings are open (their tabs use the same digits) ──
     const nextSteps =

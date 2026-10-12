@@ -2,10 +2,10 @@ import { expect, test } from 'claude-code/testing'
 
 import { SYSTEM, ember, isEnhanceable, lostPlaceholders, normalizeSettings } from './calm-enhance'
 
-const HINT = {
+const FOOTER = {
   plugin: 'calm-enhance',
-  component: 'PromptHint',
-  props: { isDraft: true, isWorking: false, hint: '? for shortcuts' },
+  component: 'SessionMode',
+  props: { modes: ['focus'] },
 } as const
 
 test('the gate: two words and ten characters, so "Yep" gets no button but "do 1 and 2" does', () => {
@@ -47,10 +47,10 @@ test('the wave paints every character and moves one step per frame', () => {
   }
 })
 
-test('the button shows at the right of the hint line for a real draft, and keeps the line itself', async ($, on) => {
+test('the ✨ Enhance button shows in the footer for a real draft, beside the mode labels', async ($, on) => {
   on('ui.render', ($, e) => {
     const { Text } = $.ui.resolve(e)
-    return Text({ children: '? for shortcuts' })
+    return Text({ children: 'focus' })
   })
   on('prompt.edit', (_$, e) => ({
     text: e.text.slice(0, e.start) + e.inputText + e.text.slice(e.end),
@@ -61,22 +61,22 @@ test('the button shows at the right of the hint line for a real draft, and keeps
     $.prompt.edit({ origin: { kind: 'composer' }, text: before, cursor: before.length, start: 0, end: before.length, inputText: text })
 
   await type('', 'Yep')
-  const short = await $.ui.mount({ ...HINT, surface: 'terminal' })
+  const short = await $.ui.mount({ ...FOOTER, surface: 'terminal' })
   expect(await short.find({ key: 'enhance' })).toBeUndefined()
   await short.unmount()
 
   await type('Yep', 'do 1 and 2')
-  const ui = await $.ui.mount({ ...HINT, surface: 'terminal' })
-  expect(await ui.find({ key: 'enhance', text: /^Enhance/ })).toBeDefined()
+  const ui = await $.ui.mount({ ...FOOTER, surface: 'terminal' })
+  expect(await ui.find({ key: 'enhance', text: '✨ Enhance' })).toBeDefined()
   expect(JSON.stringify(await ui.find({ key: 'enhance' }))).toContain('"hotkey":"e"')
-  expect(await ui.find({ type: 'Text', text: '? for shortcuts' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'focus' })).toBeDefined()
   await ui.unmount()
 })
 
-test('pressing the button on the hint line enhances the draft, then Revert brings it back', async ($, on) => {
+test('pressing ✨ Enhance in the footer rewrites the draft, then ↩ Revert brings it back', async ($, on) => {
   const filled: string[] = []
   let box = ''
-  on('ui.render', ($, e) => $.ui.resolve(e).Text({ children: '? for shortcuts' }))
+  on('ui.render', ($, e) => $.ui.resolve(e).Text({ children: 'focus' }))
   on('prompt.edit', (_$, e) => ({
     text: e.text.slice(0, e.start) + e.inputText + e.text.slice(e.end),
     cursor: e.start + e.inputText.length,
@@ -94,13 +94,13 @@ test('pressing the button on the hint line enhances the draft, then Revert bring
   await $.prompt.edit({ origin: { kind: 'composer' }, text: '', cursor: 0, start: 0, end: 0, inputText: 'do 1 and 2' })
   box = 'do 1 and 2'
 
-  const ui = await $.ui.mount({ ...HINT, surface: 'terminal' })
+  const ui = await $.ui.mount({ ...FOOTER, surface: 'terminal' })
   await ui.press({ key: 'enhance' })
   expect(filled.at(-1)).toBe('Do options 1 and 2 from your last answer.')
   await ui.unmount()
 
-  const after = await $.ui.mount({ ...HINT, surface: 'terminal' })
-  expect(await after.find({ key: 'enhance', text: /^Revert/ })).toBeDefined()
+  const after = await $.ui.mount({ ...FOOTER, surface: 'terminal' })
+  expect(await after.find({ key: 'enhance', text: '↩ Revert' })).toBeDefined()
   await after.press({ key: 'enhance' })
   expect(filled.at(-1)).toBe('do 1 and 2')
   await after.unmount()

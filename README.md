@@ -71,7 +71,7 @@ The part after `@` is the marketplace's name. Install one of the two, not both: 
 
 ## Sharpen a short draft before you send it
 
-**[Calm Enhance](plugins/calm-enhance/README.md)** is a fourth plugin: type a short draft such as `do 1 and 2` or `fix that error`, press **Enhance** at the right of the hint line under the prompt (Ctrl+E after a one-time keybinding), and Sonnet rewrites it into a precise prompt from the recent conversation, writing out which options "1 and 2" were and keeping your pasted text and images. Press again to revert. It sits under the prompt, so it stays in view next to Calm Mode or Calm Recap without scrolling:
+**[Calm Enhance](plugins/calm-enhance/README.md)** is a fourth plugin: type a short draft such as `do 1 and 2` or `fix that error`, press **✨ Enhance** at the right of the footer under the prompt (Ctrl+E after a one-time keybinding), and Sonnet rewrites it into a precise prompt from the recent conversation, writing out which options "1 and 2" were and keeping your pasted text and images. Press again to revert. It sits under the prompt, so it stays in view next to Calm Mode or Calm Recap without scrolling:
 
 ```
 /plugin install calm-enhance@calm-mode
@@ -86,7 +86,7 @@ Your choice is remembered after a restart. When Calm Mode is off, every hidden r
 
 ## Settings
 
-Click the **⚙** next to the on/off button. The panel shows one tab at a time; click a tab or press **1** to **4** while the band has focus:
+Click **🍃 Calm ▾** at the right of the footer under the prompt (it is there whatever the band shows), or the **⚙** next to the on/off button. The panel opens as a bordered box above the prompt and shows one tab at a time; click a tab or press **1** to **5** while the band has focus. Click **🍃 Calm ▴** or the ⚙ again to close it:
 
 ```
 ⚙ Settings  [1 Display] [2 Music] [3 Recap] [4 Status line]   [ Reset ]
@@ -102,7 +102,8 @@ Every switch is an icon, `◉` on and `○` off, each row says what it does, and
 
 | Tab | Settings |
 |---|---|
-| Display | Hide tool rows, Job naming, Cyberpunk, Clock, Weather, Button label, Weather city |
+| Display | Hide tool rows, Job naming, Cyberpunk, Button label |
+| Place & time | Clock (date and time), Weather (your location), Weather city |
 | Music | Music, Volume, Track, Music file |
 | Recap | Away recap, Away after, Next steps, Recap style |
 | Status line | Cache in status line, Keep warm |
