@@ -68,7 +68,9 @@ test('the ✨ Enhance button shows in the footer for a real draft, beside the mo
   await type('Yep', 'do 1 and 2')
   const ui = await $.ui.mount({ ...FOOTER, surface: 'terminal' })
   expect(await ui.find({ key: 'enhance', text: '✨ Enhance' })).toBeDefined()
-  expect(JSON.stringify(await ui.find({ key: 'enhance' }))).toContain('"hotkey":"e"')
+  // no hotkey, so the plain button reads just "✨ Enhance" (no "e:"); a bound chord presses it from the prompt
+  expect((await ui.find({ key: 'enhance' }))?.props.hotkey).toBeUndefined()
+  expect((await ui.find({ key: 'enhance' }))?.props.action).toBe('app:cycleDiffBase')
   expect(await ui.find({ type: 'Text', text: 'focus' })).toBeDefined()
   await ui.unmount()
 })

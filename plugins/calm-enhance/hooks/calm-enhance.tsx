@@ -313,14 +313,15 @@ export function registerCalmEnhance(on: On, options?: unknown): void {
     const below = await next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
     const modelName = settings.model === 'haiku' ? 'Haiku' : 'Sonnet'
-    // ctrl+e is bound to this action in ~/.claude/keybindings.json; without it, ctrl+x tab then e.
+    // No hotkey: in the footer a plain Button would read "e: ✨ Enhance", and ctrl+x tab focuses the band above
+    // the prompt, never the footer, so a letter key could not reach it. A chord bound to app:cycleDiffBase in
+    // ~/.claude/keybindings.json presses it from the prompt.
     const own = isBusy ? (
       <Text dimColor>{`✨ Enhancing with ${modelName}…`}</Text>
     ) : (
       <Button
         key="enhance"
         label={canRevert ? '↩ Revert' : '✨ Enhance'}
-        hotkey="e"
         action="app:cycleDiffBase"
         plain
         variant={canRevert ? 'secondary' : 'primary'}
