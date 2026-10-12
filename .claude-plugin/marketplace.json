@@ -1,6 +1,6 @@
 {
   "name": "calm-mode",
-  "description": "Calm Mode for Claude Code: a friendly checklist instead of tool calls; Calm Recap: a Welcome back card and a prompt-cache meter on their own; Calm Aside: a read-only side chat about the session.",
+  "description": "Calm Mode for Claude Code: a friendly checklist instead of tool calls; Calm Recap: a Welcome back card and a prompt-cache meter on their own; Calm Aside: a read-only side chat about the session; Calm Enhance: an Enhance button that turns a short draft into a precise prompt.",
   "owner": {
     "name": "Newk"
   },
@@ -16,6 +16,10 @@
     {
       "name": "calm-aside",
       "source": "./plugins/calm-aside"
+    },
+    {
+      "name": "calm-enhance",
+      "source": "./plugins/calm-enhance"
     }
   ]
 }

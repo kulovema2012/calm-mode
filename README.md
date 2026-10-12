@@ -69,6 +69,14 @@ The part after `@` is the marketplace's name. Install one of the two, not both: 
 /plugin install calm-aside@calm-mode
 ```
 
+## Sharpen a short draft before you send it
+
+**[Calm Enhance](plugins/calm-enhance/README.md)** is a fourth plugin: type a short draft such as `do 1 and 2` or `fix that error`, press **Enhance** above the prompt (Ctrl+E after a one-time keybinding), and Sonnet rewrites it into a precise prompt from the recent conversation, writing out which options "1 and 2" were and keeping your pasted text and images. Press again to revert. It draws below the other bands, so it works next to Calm Mode or Calm Recap:
+
+```
+/plugin install calm-enhance@calm-mode
+```
+
 ## Turn it on and off
 
 - Click the **[ 🍃 Calm Mode ● ]** button at the right of the band above the prompt, or
@@ -226,8 +234,8 @@ The same settings appear in `/config` under Calm Mode, and the two always agree.
 
 ## For developers
 
-- The repository is a marketplace of three plugins: `plugins/calm-mode`, `plugins/calm-recap` and `plugins/calm-aside`, listed in `.claude-plugin/marketplace.json`.
-- In each, `hooks/register.tsx` is the entry point and `types/index.d.ts` types the shared state (under the `calm-mode`, `calm-recap` and `calm-aside` keys).
+- The repository is a marketplace of four plugins: `plugins/calm-mode`, `plugins/calm-recap`, `plugins/calm-aside` and `plugins/calm-enhance`, listed in `.claude-plugin/marketplace.json`.
+- In each, `hooks/register.tsx` is the entry point and `types/index.d.ts` types the shared state (under the `calm-mode`, `calm-recap`, `calm-aside` and `calm-enhance` keys).
 - Test and check each plugin from its own folder: `claude plugin test plugins/calm-mode`, `claude plugin validate plugins/calm-recap`, and `claude plugin validate .` for the marketplace.
 - `statusline/` is the same in both plugins; change both together.
 

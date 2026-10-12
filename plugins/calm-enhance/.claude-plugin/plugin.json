@@ -1,0 +1,22 @@
+{
+  "name": "calm-enhance",
+  "version": "0.1.0",
+  "description": "Calm Enhance: an Enhance button above the prompt that turns a short, vague draft into a precise prompt from the recent conversation (\"do 1 and 2\" becomes the actual options). Press again to revert. Adapted from cc-prompt-enhance-mod by Yigit Budak (MIT).",
+  "author": {
+    "name": "Newk"
+  },
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "model": {
+      "type": "string",
+      "title": "Model",
+      "description": "Which model rewrites the draft: sonnet (better at working out what \"this\" or \"option 2\" means) or haiku (faster and cheaper).",
+      "default": "sonnet",
+      "options": [
+        "sonnet",
+        "haiku"
+      ]
+    }
+  }
+}
