@@ -1,6 +1,6 @@
 {
   "name": "calm-enhance",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Calm Enhance: an Enhance button above the prompt that turns a short, vague draft into a precise prompt from the recent conversation (\"do 1 and 2\" becomes the actual options). Press again to revert. Adapted from cc-prompt-enhance-mod by Yigit Budak (MIT).",
   "author": {
     "name": "Newk"

@@ -1,6 +1,6 @@
 # Calm Enhance
 
-An **Enhance** button above the prompt. Type a short draft, press it, and the draft is rewritten into a precise prompt using the recent conversation. Press again (**Revert**) to get your draft back.
+An **Enhance** button at the right end of the hint line under the prompt (where `? for shortcuts` is). Type a short draft, press it, and the draft is rewritten into a precise prompt using the recent conversation. Press again (**Revert**) to get your draft back.
 
 ```
 do 1 and 3 but not 2, also hide key shoud be numbr [Image #3]
@@ -33,7 +33,7 @@ To update later: `claude plugin marketplace update calm-mode`, then `claude plug
 
 ## While it works
 
-A slow wave of red, dark red, black and gray runs across your draft in the prompt box while the model rewrites it, and the band says **Enhancing with Sonnet…** (or Haiku). When the rewrite lands the wave stops and the new text replaces the draft. If you start typing, the wave stops at once and your typing wins: the rewrite is dropped and a toast says your version was kept. A draft too short to enhance flashes red instead.
+A slow wave of red, dark red, black and gray runs across your draft in the prompt box while the model rewrites it, and the hint line under the prompt says **Enhancing with Sonnet…** (or Haiku). When the rewrite lands the wave stops and the new text replaces the draft. If you start typing, the wave stops at once and your typing wins: the rewrite is dropped and a toast says your version was kept. A draft too short to enhance flashes red instead.
 
 ## What it does to a draft
 
@@ -69,7 +69,7 @@ The button shows once the draft has at least two words and ten characters, so "Y
 - If you keep typing while it works, your version stays.
 - It works in the terminal. The desktop app draws its own prompt box, which a plugin cannot read or fill, so expect it not to work there (no button press can reach the draft, and the wave cannot be drawn).
 - Pressing it again right after a rewrite gives **Revert**, which brings your draft back. Editing the rewritten text, or sending it, accepts the rewrite and the next press enhances again.
-- Its button sits at the top of the band above the prompt, above Calm Mode or Calm Recap (from Calm Mode 0.20.6 and Calm Recap 0.11.5), so you never have to scroll the band to reach it.
+- Its button sits at the right end of the hint line under the prompt, so a tall band above the prompt (Calm Mode's checklist, a recap) never pushes it out of view, and Claude Code's own hints stay on the left. It shows only while the box holds a draft.
 
 ## Credit
 

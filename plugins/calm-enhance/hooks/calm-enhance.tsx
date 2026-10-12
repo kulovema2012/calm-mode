@@ -284,12 +284,14 @@ export function registerCalmEnhance(on: On, options?: unknown): void {
     return next(e)
   })
 
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+  // The button sits at the right end of the hint line under the prompt (`? for shortcuts`), where a tall band
+  // above the prompt can never push it out of view; the engine's own line, pills and all, stays on its left.
+  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
     const isBusy = await read($, isBusyAtom)
     const hasDraft = await read($, hasDraftAtom)
     // Revert stays reachable even if the enhanced text is blank.
     const canRevert = (await read($, previousAtom)) !== null
-    if (e.props.hasSurvey || (!isBusy && !hasDraft && !canRevert)) {
+    if (!isBusy && !hasDraft && !canRevert) {
       return next(e)
     }
     const below = await next(e)
@@ -297,17 +299,17 @@ export function registerCalmEnhance(on: On, options?: unknown): void {
     const modelName = settings.model === 'haiku' ? 'Haiku' : 'Sonnet'
     if (isBusy) {
       return (
-        <Box flexDirection="column">
-          {below}
-          <Text dimColor>{`Enhancing with ${modelName}…`}</Text>
+        <Box flexDirection="row" justifyContent="space-between">
+          <Box flexShrink={1}>{below}</Box>
+          <Text dimColor>{` Enhancing with ${modelName}…`}</Text>
         </Box>
       )
     }
     // ctrl+e is bound to this action in ~/.claude/keybindings.json; without it, ctrl+x tab then e.
     return (
-      <Box flexDirection="column">
-        {below}
-        <Box>
+      <Box flexDirection="row" justifyContent="space-between">
+        <Box flexShrink={1}>{below}</Box>
+        <Box flexShrink={0}>
           <Button
             key="enhance"
             label={`${canRevert ? 'Revert' : 'Enhance'}${e.surface === 'terminal' ? ' ⌃E' : ''}`}
