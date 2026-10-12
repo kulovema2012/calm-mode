@@ -48,6 +48,7 @@ The button shows once the draft has at least two words and ten characters, so "Y
 
 ## Keys
 
+- **Ctrl+X, then E**: run `/enhance keys` once on each computer. It adds that shortcut to `~/.claude/keybindings.json`, keeps every binding already there, and leaves the file alone if Ctrl+X E is already bound to something else or the file is not plain JSON. Restart Claude Code afterwards. A plugin cannot bring a shortcut with it, so installing does not add one by itself.
 - **Ctrl+E**, after a one-time setup: add this to `~/.claude/keybindings.json` (run `/keybindings` to open it):
   ```json
   {

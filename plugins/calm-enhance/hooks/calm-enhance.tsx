@@ -267,13 +267,111 @@ async function revert($: Engine) {
   await update($, hasDraftAtom, () => isEnhanceable(text))
 }
 
+// ── /enhance keys ───────────────────────────────────────────────────────────
+// A plugin cannot ship a shortcut, so `/enhance keys` writes one into this computer's ~/.claude/keybindings.json
+// when asked: ctrl+x then e presses the ✨ Enhance button from the prompt (the Button's action).
+
+export const ENHANCE_CHORD = 'ctrl+x e'
+export const ENHANCE_ACTION = 'app:cycleDiffBase'
+
+type KeysResult = { outcome: 'added' | 'already' | 'taken' | 'unreadable'; text?: string; takenBy?: string }
+
+/** The keybindings file with the Enhance chord added, or why it was left alone. Never drops what is there. */
+export function withEnhanceKey(current: string | null): KeysResult {
+  let file: Record<string, unknown>
+  if (current === null || current.trim() === '') {
+    file = {
+      $schema: 'https://www.schemastore.org/claude-code-keybindings.json',
+      $docs: 'https://code.claude.com/docs/en/keybindings',
+      bindings: [],
+    }
+  } else {
+    try {
+      const parsed: unknown = JSON.parse(current)
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        return { outcome: 'unreadable' }
+      }
+      file = parsed as Record<string, unknown>
+    } catch {
+      return { outcome: 'unreadable' }
+    }
+  }
+  const blocks = file.bindings ?? []
+  if (!Array.isArray(blocks)) {
+    return { outcome: 'unreadable' }
+  }
+  for (const block of blocks as Array<{ context?: unknown; bindings?: Record<string, unknown> }>) {
+    const bound = block.bindings?.[ENHANCE_CHORD]
+    if (bound === ENHANCE_ACTION) {
+      return { outcome: 'already' }
+    }
+    if (bound !== undefined && bound !== null && block.context === 'Global') {
+      return { outcome: 'taken', takenBy: String(bound) }
+    }
+  }
+  const global = (blocks as Array<{ context?: unknown; bindings?: Record<string, unknown> }>).find(
+    block => block.context === 'Global' && typeof block.bindings === 'object' && block.bindings !== null,
+  )
+  if (global?.bindings !== undefined) {
+    global.bindings[ENHANCE_CHORD] = ENHANCE_ACTION
+  } else {
+    blocks.push({ context: 'Global', bindings: { [ENHANCE_CHORD]: ENHANCE_ACTION } })
+  }
+  file.bindings = blocks
+  return { outcome: 'added', text: `${JSON.stringify(file, null, 2)}\n` }
+}
+
+async function keybindingsPath($: Engine): Promise<string | undefined> {
+  const home = (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME'))
+  if (home === undefined) {
+    return undefined
+  }
+  const sep = home.includes('\\') ? '\\' : '/'
+  return [home, '.claude', 'keybindings.json'].join(sep)
+}
+
+async function addEnhanceKey($: Engine): Promise<string> {
+  const path = await keybindingsPath($)
+  if (path === undefined) {
+    return 'Could not find your home folder, so no shortcut was added. Add "ctrl+x e": "app:cycleDiffBase" with /keybindings.'
+  }
+  const current = (await $.fs.exists(path)) ? String(await $.fs.read(path)) : null
+  const result = withEnhanceKey(current)
+  switch (result.outcome) {
+    case 'already':
+      return 'Ctrl+X then E already presses ✨ Enhance on this computer.'
+    case 'taken':
+      return `Ctrl+X then E is already bound to ${result.takenBy ?? 'something else'} in ${path}, so it was left as it is. Pick another key with /keybindings and bind it to app:cycleDiffBase.`
+    case 'unreadable':
+      return `${path} is not JSON this command can read, so it was left as it is. Add "ctrl+x e": "app:cycleDiffBase" under a "Global" context with /keybindings.`
+    case 'added':
+      await $.fs.write(path, result.text ?? '')
+      return `Added: Ctrl+X then E presses ✨ Enhance (in ${path}). Restart Claude Code for it to take effect.`
+  }
+}
+
 export function registerCalmEnhance(on: On, options?: unknown): void {
   const settings = normalizeSettings(options)
 
   on('session.start', async ($, e, next) => {
     const text = (await $.prompt.read()).text
     await update($, hasDraftAtom, () => isEnhanceable(text))
+    await $.command.register({
+      name: 'enhance',
+      description: 'Calm Enhance: "keys" adds Ctrl+X then E as a shortcut for ✨ Enhance on this computer',
+      argumentHint: 'keys',
+      immediate: true,
+    })
     return next(e)
+  })
+
+  on('command.run', { command: 'enhance' }, async ($, e) => {
+    if (e.args.trim().toLowerCase() === 'keys') {
+      return { text: await addEnhanceKey($) }
+    }
+    return {
+      text: 'Type a draft and click ✨ Enhance at the right of the footer. /enhance keys adds Ctrl+X then E as a shortcut on this computer.',
+    }
   })
 
   on('prompt.edit', async ($, e, next) => {

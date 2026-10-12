@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { SYSTEM, ember, isEnhanceable, lostPlaceholders, normalizeSettings } from './calm-enhance'
+import { SYSTEM, ember, isEnhanceable, lostPlaceholders, normalizeSettings, withEnhanceKey } from './calm-enhance'
 
 const FOOTER = {
   plugin: 'calm-enhance',
@@ -106,4 +106,35 @@ test('pressing ✨ Enhance in the footer rewrites the draft, then ↩ Revert bri
   await after.press({ key: 'enhance' })
   expect(filled.at(-1)).toBe('do 1 and 2')
   await after.unmount()
+})
+
+test('/enhance keys adds Ctrl+X then E and keeps every binding already there', () => {
+  const fresh = withEnhanceKey(null)
+  expect(fresh.outcome).toBe('added')
+  expect(JSON.parse(fresh.text ?? '').bindings).toEqual([{ context: 'Global', bindings: { 'ctrl+x e': 'app:cycleDiffBase' } }])
+
+  const mine = JSON.stringify({ bindings: [{ context: 'Chat', bindings: { 'ctrl+g': null } }, { context: 'Global', bindings: { 'ctrl+t': 'app:toggleTodos' } }] })
+  const merged = JSON.parse(withEnhanceKey(mine).text ?? '')
+  expect(merged.bindings[0]).toEqual({ context: 'Chat', bindings: { 'ctrl+g': null } })
+  expect(merged.bindings[1]).toEqual({ context: 'Global', bindings: { 'ctrl+t': 'app:toggleTodos', 'ctrl+x e': 'app:cycleDiffBase' } })
+
+  expect(withEnhanceKey(withEnhanceKey(null).text ?? '').outcome).toBe('already')
+  expect(withEnhanceKey(JSON.stringify({ bindings: [{ context: 'Global', bindings: { 'ctrl+x e': 'app:toggleTodos' } }] }))).toEqual({ outcome: 'taken', takenBy: 'app:toggleTodos' })
+  expect(withEnhanceKey('{ not json').outcome).toBe('unreadable')
+})
+
+test('/enhance keys writes the file through the command, and a second run changes nothing', async ($, on) => {
+  const files = new Map<string, string>()
+  on('env.get', (_$, e) => ({ value: e.name === 'USERPROFILE' ? 'C:\\Users\\me' : undefined }) as never)
+  on('fs.exists', (_$, e) => ({ value: files.has(e.path) }) as never)
+  on('fs.read', (_$, e) => ({ value: files.get(e.path) }) as never)
+  on('fs.write', (_$, e) => {
+    files.set(e.path, e.text)
+    return { value: undefined } as never
+  })
+  const first = await $.command.run({ command: 'enhance', args: 'keys' } as never)
+  expect(JSON.stringify(first)).toContain('Added: Ctrl+X then E')
+  expect(files.get('C:\\Users\\me\\.claude\\keybindings.json')).toContain('"ctrl+x e": "app:cycleDiffBase"')
+  const second = await $.command.run({ command: 'enhance', args: 'keys' } as never)
+  expect(JSON.stringify(second)).toContain('already presses')
 })
