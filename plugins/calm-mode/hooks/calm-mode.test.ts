@@ -41,6 +41,8 @@ async function start($: Engine, on: On, onModelCall: () => void = () => undefine
   filledPrompts = []
   toasts = []
   mock.store(on)
+  // The engine beneath the band: nothing of its own to draw.
+  on('ui.render', ($, e) => $.ui.resolve(e).Box({}) as never)
   on('process.spawn', async function* (_$, e) {
     spawned.push([...e.argv])
     return { value: { code: 0, signal: null } } as never

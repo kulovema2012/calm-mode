@@ -34,6 +34,8 @@ async function start($: Engine, on: On, conversation: Array<{ role: string; text
   nextStepAsks = 0
   filledPrompts = []
   mock.store(on)
+  // The engine beneath the band: nothing of its own to draw.
+  on('ui.render', ($, e) => $.ui.resolve(e).Box({}) as never)
   const clock = mock.clock(on, { now: 1_000_000 })
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))

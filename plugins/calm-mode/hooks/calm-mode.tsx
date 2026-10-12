@@ -2589,10 +2589,13 @@ export function registerCalmMode(on: On, options?: unknown): void {
     return next(e)
   })
 
+  // Other plugins' bands (Calm Enhance's button, say) draw beneath Calm Mode's, never hidden by it.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) {
       return next(e)
     }
+    const below = await next(e)
+    const own = await (async () => {
 
     const elements = $.ui.resolve(e)
     const { Box, Text, Button } = elements
@@ -3008,6 +3011,17 @@ export function registerCalmMode(on: On, options?: unknown): void {
         {nextBlock}
         {settingsRow}
       </Box>
+    )
+    })()
+    if (below === null || below === undefined) {
+      return own
+    }
+    const { Box: Stack } = $.ui.resolve(e)
+    return (
+      <Stack flexDirection="column">
+        {own}
+        {below}
+      </Stack>
     )
   })
 
