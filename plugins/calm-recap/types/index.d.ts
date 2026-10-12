@@ -17,6 +17,8 @@ export type RecapSettings = {
   jobNaming: boolean
   /** After Claude answers, suggest up to three next prompts above the input. */
   nextSteps: boolean
+  /** Show the time of day beside the weather in the band. */
+  clock: boolean
 }
 
 /** One suggested next prompt: the short words on its button and the full prompt it sends. */
@@ -89,6 +91,8 @@ declare module 'claude-code' {
       recap: Recap | null
       /** Bumped once a minute while the card shows, so "away 18m" stays current. */
       tick: number
+      /** Bumped as each minute turns while the clock shows, so it stays current. */
+      minute: number
       /** The latest weather reading, while the weather is turned on. */
       weather: { symbol: string; tempC: number; city: string; source?: 'typed' | 'mac' | 'windows' | 'ip' } | null
       /** Keep-warm for this session. */

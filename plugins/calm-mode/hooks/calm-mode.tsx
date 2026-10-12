@@ -320,6 +320,7 @@ export const SETTING_HELP: Record<keyof CalmSettings, string> = {
   weather: 'Temperature now, by your city',
   weatherCity: 'Blank finds it from your internet address',
   nextSteps: 'Up to 3 next prompts after each answer, keys 1 to 3',
+  clock: 'Time of day beside the job timer',
 }
 
 const SETTING_NAMES: Record<keyof CalmSettings, string> = {
@@ -338,6 +339,7 @@ const SETTING_NAMES: Record<keyof CalmSettings, string> = {
   weather: 'Weather',
   weatherCity: 'Weather city',
   nextSteps: 'Next steps',
+  clock: 'Clock',
 }
 
 /** Every switch reads the same way. */
@@ -453,6 +455,7 @@ export const DEFAULT_SETTINGS: CalmSettings = {
   weather: true,
   weatherCity: '',
   nextSteps: true,
+  clock: true,
 }
 
 export const settingsAtom = atom({ plugin: 'calm-mode', key: 'settings' } as const, DEFAULT_SETTINGS)
@@ -484,7 +487,14 @@ export function normalizeSettings(options: unknown): CalmSettings {
     track: TRACK_CHOICES.includes(raw.track as TrackChoice) ? (raw.track as TrackChoice) : 'neon-drive',
     musicFile: typeof raw.musicFile === 'string' ? raw.musicFile.trim().replace(/^["']+|["']+$/g, '') : '',
     nextSteps: flag('nextSteps', DEFAULT_SETTINGS.nextSteps),
+    clock: flag('clock', DEFAULT_SETTINGS.clock),
   }
+}
+
+/** The time of day as 24-hour HH:MM in the person's own time zone. */
+export function clockTime(ms: number): string {
+  const at = new Date(ms)
+  return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`
 }
 
 /** Volume as a whole percent from 0 to 100; anything else falls back to the default. */
@@ -2676,6 +2686,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
         row('r-hide', name('Hide tool rows'), toggle('set-hide', settings.hideToolRows, () => setOption($, 'hideToolRows', !settings.hideToolRows)), about(SETTING_HELP.hideToolRows)),
         row('r-naming', name('Job naming'), toggle('set-naming', settings.jobNaming, () => setOption($, 'jobNaming', !settings.jobNaming)), about(SETTING_HELP.jobNaming)),
         row('r-cyber', name('Cyberpunk'), toggle('set-cyber', settings.cyberpunk, () => setOption($, 'cyberpunk', !settings.cyberpunk)), about(SETTING_HELP.cyberpunk)),
+        row('r-clock', name('Clock'), toggle('set-clock', settings.clock, () => setOption($, 'clock', !settings.clock)), about(SETTING_HELP.clock)),
         row('r-weather', name('Weather'), toggle('set-weather', settings.weather, () => setOption($, 'weather', !settings.weather)), about(settings.weather ? (weather?.source === 'ip' ? 'City is a guess (?): set Weather city' : SETTING_HELP.weather) : 'City found from your internet address')),
       ],
       music: [
@@ -2898,7 +2909,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
         case 'done':
           return (
             <Text wrap="truncate" color={theme.done}>
-              {`${theme.icons.done}${theme.shout('All done')}${sep}${title}${sep}took ${elapsed}`}
+              {`${theme.icons.done}${theme.shout('All done')}${sep}${title}${sep}took ${elapsed}${settings.clock && list.finishedAt !== null ? `${sep}at ${clockTime(list.finishedAt)}` : ''}`}
             </Text>
           )
         default: {
@@ -2914,7 +2925,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
             <Text wrap="truncate">
               <Text bold color={theme.title}>{titleCell}</Text>
               <Text dimColor={!settings.cyberpunk} color={settings.cyberpunk ? theme.accent : undefined}>
-                {`⏱ ${elapsed}`}
+                {`⏱ ${elapsed}${settings.clock ? `${sep}${clockTime(now)}` : ''}`}
               </Text>
               {helpers > 0 && !isHelperRowShown ? (
                 <Text bold color={theme.accent}>{`${sep}${SPINNER[tick % SPINNER.length]} ${helpers}`}</Text>

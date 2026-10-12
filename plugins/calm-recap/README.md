@@ -76,7 +76,7 @@ Click **⚙** beside the on/off button. One tab at a time; click a tab or press 
 
 | Tab | Settings |
 |---|---|
-| Display | Job naming, Cyberpunk (neon look, 🌃 button; the normal look has 🍃), Weather, Button label, Weather city |
+| Display | Job naming, Cyberpunk (neon look, 🌃 button; the normal look has 🍃), Clock (time of day beside the weather, 24-hour, on by default), Weather, Button label, Weather city |
 | Recap | Away after (1 to 120 minutes), Next steps, Recap style (Band or Pane) |
 | Status line | Cache in status line, Keep warm |
 

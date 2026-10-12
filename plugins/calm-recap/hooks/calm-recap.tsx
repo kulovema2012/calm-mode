@@ -24,6 +24,7 @@ export const DEFAULT_SETTINGS: RecapSettings = {
   weatherCity: '',
   jobNaming: true,
   nextSteps: true,
+  clock: true,
 }
 
 export const enabledAtom = atom({ plugin: 'calm-recap', key: 'isEnabled' } as const, true)
@@ -33,12 +34,14 @@ export const settingsTabAtom = atom({ plugin: 'calm-recap', key: 'settingsTab' }
 export const settingsHintAtom = atom({ plugin: 'calm-recap', key: 'settingsHint' } as const, null)
 export const recapAtom = atom({ plugin: 'calm-recap', key: 'recap' } as const, null)
 export const tickAtom = atom({ plugin: 'calm-recap', key: 'tick' } as const, 0)
+export const minuteAtom = atom({ plugin: 'calm-recap', key: 'minute' } as const, 0)
 
 // Timers and what the last turn said; a reload resets them. Everything drawn lives in $.state.
 const runtime: {
   awayTimer: Timer | null
   recapTicker: Timer | null
   weatherTimer: Timer | null
+  clockTimer: Timer | null
   keepWarmTimer: Timer | null
   isTurnRunning: boolean
   turnStartedAt: number
@@ -53,6 +56,7 @@ const runtime: {
   awayTimer: null,
   recapTicker: null,
   weatherTimer: null,
+  clockTimer: null,
   keepWarmTimer: null,
   isTurnRunning: false,
   turnStartedAt: 0,
@@ -84,7 +88,14 @@ export function normalizeSettings(options: unknown): RecapSettings {
       typeof raw.weatherCity === 'string' ? raw.weatherCity.replace(/\s+/g, ' ').trim().slice(0, 60) : '',
     jobNaming: typeof raw.jobNaming === 'boolean' ? raw.jobNaming : DEFAULT_SETTINGS.jobNaming,
     nextSteps: typeof raw.nextSteps === 'boolean' ? raw.nextSteps : DEFAULT_SETTINGS.nextSteps,
+    clock: typeof raw.clock === 'boolean' ? raw.clock : DEFAULT_SETTINGS.clock,
   }
+}
+
+/** The time of day as 24-hour HH:MM in the person's own time zone. */
+export function clockTime(ms: number): string {
+  const at = new Date(ms)
+  return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`
 }
 
 /**
@@ -122,6 +133,7 @@ export const SETTING_HELP: Record<keyof RecapSettings, string> = {
   weatherCity: 'Blank finds it from your internet address',
   jobNaming: 'Haiku gives each job a short name',
   nextSteps: 'Up to 3 next prompts after each answer, keys 1 to 3',
+  clock: 'Time of day beside the weather',
 }
 
 const SETTING_NAMES: Record<keyof RecapSettings, string> = {
@@ -134,6 +146,7 @@ const SETTING_NAMES: Record<keyof RecapSettings, string> = {
   weatherCity: 'Weather city',
   jobNaming: 'Job naming',
   nextSteps: 'Next steps',
+  clock: 'Clock',
 }
 
 /** Every switch is an icon: ◉ on, ○ off. */
@@ -163,6 +176,7 @@ async function setOption<K extends keyof RecapSettings>($: Engine, field: K, val
   await update($, settingsAtom, () => next)
   await update($, settingsHintAtom, () => settingHint(field, next[field]))
   await syncWeather($)
+  await syncClock($)
   if (field === 'weatherCity' && next.weather) {
     // The timer is already running; show the new city now rather than within 15 minutes.
     await refreshWeather($).catch(() => undefined)
@@ -194,6 +208,7 @@ async function setEnabled($: Engine, isEnabled: boolean) {
   await update($, enabledAtom, () => isEnabled)
   await $.store.set(STORE_KEY, isEnabled)
   await syncWeather($)
+  await syncClock($)
   if (!isEnabled) {
     await dismissRecap($)
   }
@@ -1174,6 +1189,22 @@ async function syncWeather($: Engine) {
   }
 }
 
+/** Redraws the clock as each minute turns while it is shown; no timer runs while it is off. */
+async function syncClock($: Engine) {
+  const isOn = (await read($, enabledAtom)) && (await read($, settingsAtom)).clock
+  if (isOn && runtime.clockTimer === null) {
+    const bump = () => void update($, minuteAtom, n => (n ?? 0) + 1)
+    const now = await $.clock.now()
+    runtime.clockTimer = $.clock.after(60_000 - (now % 60_000), () => {
+      bump()
+      runtime.clockTimer = $.clock.every(60_000, bump)
+    })
+  } else if (!isOn && runtime.clockTimer !== null) {
+    runtime.clockTimer.cancel()
+    runtime.clockTimer = null
+  }
+}
+
 // ── The last job ────────────────────────────────────────────────────────────
 // Calm Recap has no plan, so the "job" is your last message: once Claude answers, the band says how it went,
 // "✓ All done · Make the pricing cards blue · took 1m 30s" (cyberpunk: "◆ ALL DONE // … // took 01:30"). The
@@ -1476,6 +1507,7 @@ export function registerCalmRecap(on: On, options?: unknown): void {
     await update($, enabledAtom, () => (typeof stored === 'boolean' ? stored : true))
     await update($, settingsAtom, () => configured)
     void syncWeather($).catch(() => undefined)
+    void syncClock($).catch(() => undefined)
     if ((await read($, keepWarmAtom))?.isOn === true) {
       ensureKeepWarmTimer($)
     }
@@ -1649,13 +1681,21 @@ export function registerCalmRecap(on: On, options?: unknown): void {
     const recap = isEnabled ? await read($, recapAtom) : null
     const weather = isEnabled && settings.weather ? await read($, weatherAtom) : null
     const weatherCell = weather === null ? '' : `${weatherText(weather)}  `
+    // Read so the band redraws as each minute turns.
+    await read($, minuteAtom)
     const theme = settings.cyberpunk ? CYBERPUNK : CLASSIC
     const columns = Math.max(20, e.props.bodyColumns)
     const now = await $.clock.now()
+    const clockCell = isEnabled && settings.clock ? `${clockTime(now)}  ` : ''
 
     const label = toggleLabel(settings, isEnabled)
     const buttons = (
       <Box flexDirection="row">
+        {clockCell === '' ? null : (
+          <Text dimColor={!settings.cyberpunk} color={settings.cyberpunk ? theme.accent : undefined}>
+            {clockCell}
+          </Text>
+        )}
         {weatherCell === '' ? null : (
           <Text dimColor={!settings.cyberpunk} color={settings.cyberpunk ? theme.accent : undefined}>
             {weatherCell}
@@ -1672,7 +1712,7 @@ export function registerCalmRecap(on: On, options?: unknown): void {
         />
       </Box>
     )
-    const headerRoom = Math.max(4, columns - (weatherCell.length + theme.gear.length + 1 + label.length + 4) - 1)
+    const headerRoom = Math.max(4, columns - (clockCell.length + weatherCell.length + theme.gear.length + 1 + label.length + 4) - 1)
 
     // ── Settings: one tab at a time, each row "name · switch · what it does" ──
     const tab = await read($, settingsTabAtom)
@@ -1693,6 +1733,7 @@ export function registerCalmRecap(on: On, options?: unknown): void {
       display: [
         row('r-cyber', name('Cyberpunk'), toggle('set-cyber', settings.cyberpunk, () => setOption($, 'cyberpunk', !settings.cyberpunk)), about(SETTING_HELP.cyberpunk)),
         row('r-naming', name('Job naming'), toggle('set-naming', settings.jobNaming, () => setOption($, 'jobNaming', !settings.jobNaming)), about(SETTING_HELP.jobNaming)),
+        row('r-clock', name('Clock'), toggle('set-clock', settings.clock, () => setOption($, 'clock', !settings.clock)), about(SETTING_HELP.clock)),
         row('r-weather', name('Weather'), toggle('set-weather', settings.weather, () => setOption($, 'weather', !settings.weather)), about(settings.weather ? (weather?.source === 'ip' ? 'City is a guess (?): set Weather city' : SETTING_HELP.weather) : 'City found from your internet address')),
       ],
       recap: [

@@ -102,7 +102,7 @@ Every switch is an icon, `◉` on and `○` off, each row says what it does, and
 
 | Tab | Settings |
 |---|---|
-| Display | Hide tool rows, Job naming, Cyberpunk, Weather, Button label, Weather city |
+| Display | Hide tool rows, Job naming, Cyberpunk, Clock, Weather, Button label, Weather city |
 | Music | Music, Volume, Track, Music file |
 | Recap | Away recap, Away after, Next steps, Recap style |
 | Status line | Cache in status line, Keep warm |
@@ -112,6 +112,7 @@ Every switch is an icon, `◉` on and `○` off, each row says what it does, and
 | Hide tool rows | ON | Hides tool calls and their output while Calm Mode is on. OFF keeps the checklist and shows every row. |
 | Job naming | ON | Asks Haiku for a short job name. OFF saves that call and uses your first line instead. |
 | Cyberpunk theme | OFF | Neon pink titles, cyan meters, yellow alerts. |
+| Clock | ON | The time of day (24-hour, your time zone) beside the job timer in the header, `⏱ 02:13 · 21:46`, and the time a job finished, `took 02:13 · at 21:46`. |
 | Button label | Calm Mode | The words on the on/off button (up to 20 characters). Type and press Enter. |
 | Music | ON | Background music while Claude works, **only in the Cyberpunk theme**. Pauses when Claude needs you, stops when the job ends. |
 | Volume | 35% | `[ − ]` and `[ + ]` change it in 10% steps. 0% keeps the music off. |

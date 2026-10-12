@@ -61,6 +61,8 @@ export type CalmSettings = {
   weatherCity: string
   /** After Claude answers, suggest up to three next prompts above the input. */
   nextSteps: boolean
+  /** Show the time of day beside the job timer in the band's header. */
+  clock: boolean
 }
 
 /** One suggested next prompt: the short words on its button and the full prompt it sends. */

@@ -1,6 +1,6 @@
 {
   "name": "calm-mode",
-  "version": "0.20.6",
+  "version": "0.21.0",
   "description": "Calm Mode: hides tool calls and shows one friendly checklist above the prompt while Claude works.",
   "author": {
     "name": "Newk"
@@ -73,6 +73,12 @@
       "title": "Away after (minutes)",
       "description": "Minutes of quiet after a job before the Welcome back card appears (1 to 120).",
       "default": 5
+    },
+    "clock": {
+      "type": "boolean",
+      "title": "Clock",
+      "description": "Show the time of day (24-hour, your time zone) beside the job timer in the band's header, and the time a job finished.",
+      "default": true
     },
     "nextSteps": {
       "type": "boolean",

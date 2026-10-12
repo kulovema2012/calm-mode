@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { offeredNextSteps, parseNextSteps, cleanTitle, fallbackPoints, fitRecap, keepWarmDecision, keepWarmUntil, parsePoints, parseCitedPoints, findRow, resumeFromCacheState, parseWindowsLocation, isLocationFresh, parseMacLocation, recapLines, stepAwayMinutes, toggleLabel, weatherSymbol, weatherText, wrapText } from './calm-recap'
+import { offeredNextSteps, parseNextSteps, cleanTitle, fallbackPoints, fitRecap, keepWarmDecision, keepWarmUntil, parsePoints, parseCitedPoints, findRow, resumeFromCacheState, parseWindowsLocation, isLocationFresh, parseMacLocation, recapLines, stepAwayMinutes, toggleLabel, weatherSymbol, weatherText, wrapText, clockTime, normalizeSettings } from './calm-recap'
 
 const BAND = {
   plugin: 'calm-recap',
@@ -75,7 +75,7 @@ test('helpers: points, wrapping, away steps and the theme icons', () => {
   expect(wrapText('one two three four five', 9)).toEqual(['one two', 'three', 'four five'])
   expect(stepAwayMinutes(5, 1)).toBe(10)
   expect(stepAwayMinutes(1, -1)).toBe(1)
-  const settings = { buttonLabel: 'Calm Recap', cyberpunk: false, awayMinutes: 5, recapStyle: 'band', cacheMeter: false, weather: true, weatherCity: '', jobNaming: true, nextSteps: true } as const
+  const settings = { buttonLabel: 'Calm Recap', cyberpunk: false, awayMinutes: 5, recapStyle: 'band', cacheMeter: false, weather: true, weatherCity: '', jobNaming: true, nextSteps: true, clock: true } as const
   expect(toggleLabel(settings, true)).toBe('🍃 Calm Recap ●')
   expect(toggleLabel({ ...settings, cyberpunk: true }, false)).toBe('🌃 CALM RECAP ⭘')
 })
@@ -865,4 +865,11 @@ test('hide (key 4) puts the suggestions away, and /recap next brings them back',
   ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await ui.find({ key: 'next-take-0' })).toBeDefined()
   await ui.unmount()
+})
+
+test('the clock reads 24-hour HH:MM in local time, and is on unless turned off', () => {
+  expect(clockTime(new Date(2026, 9, 12, 9, 5).getTime())).toBe('09:05')
+  expect(clockTime(new Date(2026, 9, 12, 21, 46, 59).getTime())).toBe('21:46')
+  expect(normalizeSettings(undefined).clock).toBe(true)
+  expect(normalizeSettings({ clock: false }).clock).toBe(false)
 })

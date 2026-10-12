@@ -1,6 +1,6 @@
 {
   "name": "calm-recap",
-  "version": "0.11.5",
+  "version": "0.12.0",
   "description": "Calm Recap: a Welcome back card when you return to the keyboard, and the prompt cache's hit rate and time left in your status line.",
   "author": {
     "name": "Newk"
@@ -30,6 +30,12 @@
       "title": "Away after (minutes)",
       "description": "Minutes of quiet after Claude answers before the Welcome back card appears (1 to 120).",
       "default": 5
+    },
+    "clock": {
+      "type": "boolean",
+      "title": "Clock",
+      "description": "Show the time of day (24-hour, your time zone) beside the weather in the band.",
+      "default": true
     },
     "nextSteps": {
       "type": "boolean",

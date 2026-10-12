@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { clampVolume, cleanName, fitChecklist, keepWarmDecision, keepWarmUntil, resumeFromCacheState, parseWindowsLocation, isLocationFresh, parseMacLocation, weatherSymbol, weatherText, fitRecap, mayPlay, recapLines, stepAwayMinutes, fallbackPoints, parsePoints, parseCitedPoints, findRow, wrapText, musicCommand, nextTrack, trackName, windowsMusicScript, parseNextSteps, offeredNextSteps, cleanSuggestion } from './calm-mode'
+import { clampVolume, cleanName, fitChecklist, keepWarmDecision, keepWarmUntil, resumeFromCacheState, parseWindowsLocation, isLocationFresh, parseMacLocation, weatherSymbol, weatherText, fitRecap, mayPlay, recapLines, stepAwayMinutes, fallbackPoints, parsePoints, parseCitedPoints, findRow, wrapText, musicCommand, nextTrack, trackName, windowsMusicScript, parseNextSteps, offeredNextSteps, cleanSuggestion, clockTime, normalizeSettings } from './calm-mode'
 
 /** argv of every player the plugin started in the current test. */
 let spawned: string[][] = []
@@ -1458,4 +1458,11 @@ test('hide (key 4) puts the suggestions away, and /calm next brings them back', 
   ui = await $.ui.mount({ ...BAND, props: { ...BAND.props, isWorking: false }, surface: 'terminal' })
   expect(await ui.find({ key: 'next-take-0' })).toBeDefined()
   await ui.unmount()
+})
+
+test('the clock reads 24-hour HH:MM in local time, and is on unless turned off', () => {
+  expect(clockTime(new Date(2026, 9, 12, 9, 5).getTime())).toBe('09:05')
+  expect(clockTime(new Date(2026, 9, 12, 21, 46, 59).getTime())).toBe('21:46')
+  expect(normalizeSettings(undefined).clock).toBe(true)
+  expect(normalizeSettings({ clock: false }).clock).toBe(false)
 })
