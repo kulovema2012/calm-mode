@@ -1631,12 +1631,14 @@ export function registerCalmRecap(on: On, options?: unknown): void {
     return next(e)
   })
 
-  // Other plugins' bands (Calm Enhance's button, say) draw beneath Calm Recap's, never hidden by it.
+  // Other plugins' bands (Calm Enhance's button, say) draw on top of Calm Recap's, so they stay in view
+  // without scrolling the band; their row comes out of Calm Recap's own space.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) {
       return next(e)
     }
     const below = await next(e)
+    const belowRows = below === null || below === undefined ? 0 : 1
     const own = await (async () => {
     const elements = $.ui.resolve(e)
     const { Box, Text, Button } = elements
@@ -1795,7 +1797,7 @@ export function registerCalmRecap(on: On, options?: unknown): void {
           </Box>
         </Box>
       )
-    const nextRows = nextBlock === null ? 0 : nextSteps?.isLoading === true ? 1 : 2 + nextItems.length
+    const nextRows = belowRows + (nextBlock === null ? 0 : nextSteps?.isLoading === true ? 1 : 2 + nextItems.length)
 
     if (recap !== null && recap.isShowing) {
       const recapTick = await read($, tickAtom)
@@ -1884,8 +1886,8 @@ export function registerCalmRecap(on: On, options?: unknown): void {
     const { Box: Stack } = $.ui.resolve(e)
     return (
       <Stack flexDirection="column">
-        {own}
         {below}
+        {own}
       </Stack>
     )
   })

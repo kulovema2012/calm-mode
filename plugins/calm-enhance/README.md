@@ -69,7 +69,7 @@ The button shows once the draft has at least two words and ten characters, so "Y
 - If you keep typing while it works, your version stays.
 - It works in the terminal. The desktop app draws its own prompt box, which a plugin cannot read or fill, so expect it not to work there (no button press can reach the draft, and the wave cannot be drawn).
 - Pressing it again right after a rewrite gives **Revert**, which brings your draft back. Editing the rewritten text, or sending it, accepts the rewrite and the next press enhances again.
-- It draws its button below the other bands (Calm Mode, Calm Recap), never instead of them.
+- Its button sits at the top of the band above the prompt, above Calm Mode or Calm Recap (from Calm Mode 0.20.6 and Calm Recap 0.11.5), so you never have to scroll the band to reach it.
 
 ## Credit
 
