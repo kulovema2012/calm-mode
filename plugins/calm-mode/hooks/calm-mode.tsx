@@ -2748,6 +2748,8 @@ export function registerCalmMode(on: On, options?: unknown): void {
     const nextSteps =
       isEnabled && settings.nextSteps && !isSettingsOpen && !e.props.isWorking ? await read($, nextStepsAtom) : null
     const nextItems = nextSteps?.items ?? []
+    // 0 hides the list, except while the recap card shows: there 0 is its Got it, and hide takes a click.
+    const nextHideKey = recap !== null && recap.isShowing ? {} : { hotkey: '0' }
     const nextBlock =
       nextSteps === null ? null : nextSteps.isLoading ? (
         <Text key="next-loading" dimColor italic>{'  next steps…'}</Text>
@@ -2770,9 +2772,12 @@ export function registerCalmMode(on: On, options?: unknown): void {
               />
             </Box>
           ))}
+          <Box key="next-hide-row" flexDirection="row" marginLeft={2}>
+            <Button key="next-hide" label="hide" {...nextHideKey} plain dimColor onPress={() => update($, nextStepsAtom, () => null)} />
+          </Box>
         </Box>
       )
-    const nextRows = nextBlock === null ? 0 : nextSteps?.isLoading === true ? 1 : 1 + nextItems.length
+    const nextRows = nextBlock === null ? 0 : nextSteps?.isLoading === true ? 1 : 2 + nextItems.length
 
     if (recap !== null && recap.isShowing) {
       const awayFor = recap.awaySince === null || recap.isAsked === true ? '' : `${theme.sep}away ${theme.duration(now - recap.awaySince)}`

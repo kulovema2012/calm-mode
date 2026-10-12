@@ -847,3 +847,20 @@ test('/recap next shows the last suggestions again after they were cleared', asy
   expect(await ui.find({ key: 'next-take-0' })).toBeDefined()
   await ui.unmount()
 })
+
+test('hide (key 0) puts the suggestions away, and /recap next brings them back', async ($, on) => {
+  const clock = await start($, on)
+  nextStepReply = '[{"label":"Run the tests","prompt":"Run the tests"}]'
+  await $.turn.complete({ answer: 'Added the pricing section and wired the buttons. Everything builds and the page renders cleanly now.', durationMs: 1000, isAborted: false, turnId: 't1', reason: 'answer' } as never)
+  await clock.advance(1)
+  let ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(JSON.stringify(await ui.find({ key: 'next-hide' }))).toContain('"hotkey":"0"')
+  await ui.press({ key: 'next-hide' })
+  await ui.redraw()
+  expect(await ui.find({ key: 'next-take-0' })).toBeUndefined()
+  await ui.unmount()
+  await $.command.run({ command: 'recap', args: 'next' } as never)
+  ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ key: 'next-take-0' })).toBeDefined()
+  await ui.unmount()
+})
