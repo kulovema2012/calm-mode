@@ -1765,8 +1765,6 @@ export function registerCalmRecap(on: On, options?: unknown): void {
     const nextSteps =
       isEnabled && settings.nextSteps && !isSettingsOpen && !e.props.isWorking ? await read($, nextStepsAtom) : null
     const nextItems = nextSteps?.items ?? []
-    // 0 hides the list, except while the recap card shows: there 0 is its Got it, and hide takes a click.
-    const nextHideKey = recap !== null && recap.isShowing ? {} : { hotkey: '0' }
     const nextBlock =
       nextSteps === null ? null : nextSteps.isLoading ? (
         <Text key="next-loading" dimColor italic>{'  next steps…'}</Text>
@@ -1790,7 +1788,7 @@ export function registerCalmRecap(on: On, options?: unknown): void {
             </Box>
           ))}
           <Box key="next-hide-row" flexDirection="row" marginLeft={2}>
-            <Button key="next-hide" label="hide" {...nextHideKey} plain dimColor onPress={() => update($, nextStepsAtom, () => null)} />
+            <Button key="next-hide" label="hide" hotkey="4" plain dimColor onPress={() => update($, nextStepsAtom, () => null)} />
           </Box>
         </Box>
       )

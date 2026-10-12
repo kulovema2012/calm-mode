@@ -1440,14 +1440,14 @@ test('/calm next shows the last suggestions again after they were cleared', asyn
   await ui.unmount()
 })
 
-test('hide (key 0) puts the suggestions away, and /calm next brings them back', async ($, on) => {
+test('hide (key 4) puts the suggestions away, and /calm next brings them back', async ($, on) => {
   on('agent.list', () => ({ value: [] }) as never)
   const clock = await start($, on)
   nextStepReply = '[{"label":"Run the tests","prompt":"Run the tests"}]'
   await $.turn.complete({ ...FINISHED, answer: 'Added the pricing section and wired the buttons. Everything builds and the page renders cleanly now.' } as never)
   await clock.advance(1)
   let ui = await $.ui.mount({ ...BAND, props: { ...BAND.props, isWorking: false }, surface: 'terminal' })
-  expect(JSON.stringify(await ui.find({ key: 'next-hide' }))).toContain('"hotkey":"0"')
+  expect(JSON.stringify(await ui.find({ key: 'next-hide' }))).toContain('"hotkey":"4"')
   await ui.press({ key: 'next-hide' })
   await ui.redraw()
   expect(await ui.find({ key: 'next-take-0' })).toBeUndefined()
