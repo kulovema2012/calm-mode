@@ -320,7 +320,7 @@ export const SETTING_HELP: Record<keyof CalmSettings, string> = {
   weather: 'Temperature now, by your city',
   weatherCity: 'Blank finds it from your internet address',
   nextSteps: 'Up to 3 next prompts after each answer, keys 1 to 3',
-  clock: 'Time of day beside the job timer',
+  clock: 'Date and time beside the job timer',
 }
 
 const SETTING_NAMES: Record<keyof CalmSettings, string> = {
@@ -491,10 +491,14 @@ export function normalizeSettings(options: unknown): CalmSettings {
   }
 }
 
-/** The time of day as 24-hour HH:MM in the person's own time zone. */
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** The date and time of day, "Mon 12 Oct 21:46", 24-hour in the person's own time zone. */
 export function clockTime(ms: number): string {
   const at = new Date(ms)
-  return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`
+  const time = `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`
+  return `${WEEKDAYS[at.getDay()]} ${at.getDate()} ${MONTHS[at.getMonth()]} ${time}`
 }
 
 /** Volume as a whole percent from 0 to 100; anything else falls back to the default. */

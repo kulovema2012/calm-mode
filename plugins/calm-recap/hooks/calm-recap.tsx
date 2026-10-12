@@ -92,10 +92,14 @@ export function normalizeSettings(options: unknown): RecapSettings {
   }
 }
 
-/** The time of day as 24-hour HH:MM in the person's own time zone. */
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** The date and time of day, "Mon 12 Oct 21:46", 24-hour in the person's own time zone. */
 export function clockTime(ms: number): string {
   const at = new Date(ms)
-  return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`
+  const time = `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`
+  return `${WEEKDAYS[at.getDay()]} ${at.getDate()} ${MONTHS[at.getMonth()]} ${time}`
 }
 
 /**
@@ -133,7 +137,7 @@ export const SETTING_HELP: Record<keyof RecapSettings, string> = {
   weatherCity: 'Blank finds it from your internet address',
   jobNaming: 'Haiku gives each job a short name',
   nextSteps: 'Up to 3 next prompts after each answer, keys 1 to 3',
-  clock: 'Time of day beside the weather',
+  clock: 'Date and time beside the weather',
 }
 
 const SETTING_NAMES: Record<keyof RecapSettings, string> = {

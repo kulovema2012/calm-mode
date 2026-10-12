@@ -1,6 +1,6 @@
 {
   "name": "calm-recap",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "description": "Calm Recap: a Welcome back card when you return to the keyboard, and the prompt cache's hit rate and time left in your status line.",
   "author": {
     "name": "Newk"
@@ -34,7 +34,7 @@
     "clock": {
       "type": "boolean",
       "title": "Clock",
-      "description": "Show the time of day (24-hour, your time zone) beside the weather in the band.",
+      "description": "Show the date and time (24-hour, your time zone) beside the weather in the band.",
       "default": true
     },
     "nextSteps": {

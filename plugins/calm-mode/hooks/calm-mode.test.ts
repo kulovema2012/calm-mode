@@ -1460,9 +1460,9 @@ test('hide (key 4) puts the suggestions away, and /calm next brings them back', 
   await ui.unmount()
 })
 
-test('the clock reads 24-hour HH:MM in local time, and is on unless turned off', () => {
-  expect(clockTime(new Date(2026, 9, 12, 9, 5).getTime())).toBe('09:05')
-  expect(clockTime(new Date(2026, 9, 12, 21, 46, 59).getTime())).toBe('21:46')
+test('the clock reads the date and 24-hour time in local time, and is on unless turned off', () => {
+  expect(clockTime(new Date(2026, 9, 12, 9, 5).getTime())).toBe('Mon 12 Oct 09:05')
+  expect(clockTime(new Date(2026, 0, 3, 21, 46, 59).getTime())).toBe('Sat 3 Jan 21:46')
   expect(normalizeSettings(undefined).clock).toBe(true)
   expect(normalizeSettings({ clock: false }).clock).toBe(false)
 })
