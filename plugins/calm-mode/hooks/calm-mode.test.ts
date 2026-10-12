@@ -85,6 +85,22 @@ async function start($: Engine, on: On, onModelCall: () => void = () => undefine
   return clock
 }
 
+
+/** Presses one of Calm Mode's buttons at the right of the footer (the on/off button or ⚙). */
+async function pressFooter($: Engine, key: string) {
+  const footer = await $.ui.mount({ plugin: 'calm-mode', component: 'SessionMode', props: { modes: [] }, surface: 'terminal' })
+  await footer.press({ key })
+  await footer.unmount()
+}
+
+/** The label of one of Calm Mode's footer buttons, or undefined when it is not drawn. */
+async function footerLabel($: Engine, key: string) {
+  const footer = await $.ui.mount({ plugin: 'calm-mode', component: 'SessionMode', props: { modes: [] }, surface: 'terminal' })
+  const label = (await footer.find({ key }))?.props.label
+  await footer.unmount()
+  return label
+}
+
 test('names are cleaned into plain words', () => {
   expect(cleanName('Build the pricing section in `src/Pricing.tsx`')).toBe('Build the pricing section in')
   expect(cleanName('Fix the menu in src/app/nav.tsx so it opens')).toBe('Fix the menu in so it opens')
@@ -117,7 +133,7 @@ test('a to-do list plus a 60% report draws done, current, next and later rows', 
     expect(await ui.find({ type: 'Text', text: '  60%' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '  Next' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '  Up next' })).toBeDefined()
-    expect(await ui.find({ key: 'calm-toggle' })).toBeDefined()
+    expect(await footerLabel($, 'calm-toggle')).toBe('🍃 Calm Mode ●')
     await ui.unmount()
   }
 })
@@ -139,8 +155,7 @@ test('/calm off hides the band and leaves only the button', async ($, on) => {
   await $.command.run({ command: 'calm', args: 'off' } as never)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await ui.find({ type: 'Text', text: /Understand your request/ })).toBeUndefined()
-  const button = await ui.find({ key: 'calm-toggle' })
-  expect(button?.props.label).toBe('🍃 Calm Mode ○')
+  expect(await footerLabel($, 'calm-toggle')).toBe('🍃 Calm Mode ○')
   await ui.unmount()
 })
 
@@ -187,7 +202,7 @@ test('the gear opens on/off buttons for every setting and a label field', async 
   await start($, on)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await ui.find({ key: 'set-hide' })).toBeUndefined()
-  await ui.press({ key: 'calm-settings' })
+  await pressFooter($, 'calm-settings')
   expect((await ui.find({ key: 'set-hide' }))?.props.label).toBe('◉')
   expect((await ui.find({ key: 'set-naming' }))?.props.label).toBe('◉')
   expect((await ui.find({ key: 'set-cyber' }))?.props.label).toBe('○')
@@ -207,13 +222,13 @@ test('pressing a setting button changes it through /config', async ($, on) => {
   })
   await start($, on)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  await ui.press({ key: 'calm-settings' })
+  await pressFooter($, 'calm-settings')
   await ui.press({ key: 'set-cyber' })
   expect(writes).toEqual([{ key: 'calm-mode.cyberpunk', value: true }])
   expect((await ui.find({ key: 'set-cyber' }))?.props.label).toBe('◉')
   expect(await ui.find({ type: 'Text', text: /Cyberpunk: On\. Neon pink and cyan look\./ })).toBeDefined()
   await ui.input({ key: 'set-label', text: 'Zen' })
-  expect((await ui.find({ key: 'calm-toggle' }))?.props.label).toBe('🌃 ZEN ⏻')
+  expect(await footerLabel($, 'calm-toggle')).toBe('🌃 ZEN ⏻')
   await ui.unmount()
 })
 
@@ -227,7 +242,7 @@ test('cyberpunk theme draws neon rows', { options: { cyberpunk: true, buttonLabe
     expect(await ui.find({ type: 'Text', text: '▸ ' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '▰▰▰▰▰▰▱▱▱▱' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /◢◤ BUILD MY LANDING PAGE/ })).toBeDefined()
-    expect((await ui.find({ key: 'calm-toggle' }))?.props.label).toBe('🌃 NEO ⏻')
+    expect(await footerLabel($, 'calm-toggle')).toBe('🌃 NEO ⏻')
     await ui.unmount()
   }
 })
@@ -309,7 +324,7 @@ test('no music when the music setting is off', { options: { cyberpunk: true, mus
 test('the settings row has a music button and a music file field', async ($, on) => {
   await start($, on)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  await ui.press({ key: 'calm-settings' })
+  await pressFooter($, 'calm-settings')
   await ui.press({ key: 'tab-music' })
   expect((await ui.find({ key: 'set-music' }))?.props.label).toBe('◉')
   expect(await ui.find({ type: 'Text', text: /Turn Cyberpunk on/ })).toBeDefined()
@@ -328,7 +343,7 @@ test('volume is clamped to 0..100 and reaches each player', () => {
 test('the volume buttons step the music volume by 10', async ($, on) => {
   await start($, on)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  await ui.press({ key: 'calm-settings' })
+  await pressFooter($, 'calm-settings')
   await ui.press({ key: 'tab-music' })
   expect(await ui.find({ type: 'Text', text: ' 35% ' })).toBeDefined()
   await ui.press({ key: 'vol-up' })
@@ -370,7 +385,7 @@ test('shuffle plays one of the built-in tracks', { options: { cyberpunk: true, t
 test('the track button shows and steps the track', async ($, on) => {
   await start($, on)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  await ui.press({ key: 'calm-settings' })
+  await pressFooter($, 'calm-settings')
   await ui.press({ key: 'tab-music' })
   expect((await ui.find({ key: 'set-track' }))?.props.label).toBe('♪ Neon Drive')
   await ui.press({ key: 'set-track' })
@@ -399,7 +414,7 @@ test('the status-line button runs the installer and records the choice', async (
   })
   await start($, on)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  await ui.press({ key: 'calm-settings' })
+  await pressFooter($, 'calm-settings')
   await ui.press({ key: 'tab-status' })
   expect((await ui.find({ key: 'set-cache' }))?.props.label).toBe('○')
   await ui.press({ key: 'set-cache' })
@@ -626,7 +641,7 @@ test('away time steps: 1 to 120 minutes, staying at the ends', () => {
 test('the away buttons change how long before the card shows', async ($, on) => {
   const clock = await start($, on)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  await ui.press({ key: 'calm-settings' })
+  await pressFooter($, 'calm-settings')
   await ui.press({ key: 'tab-recap' })
   expect(await ui.find({ type: 'Text', text: ' 5m ' })).toBeDefined()
   await ui.press({ key: 'away-down' })
@@ -731,7 +746,7 @@ test('the recap pane shows the full card with the job steps', async ($, on) => {
 test('settings show one tab at a time, switched by click or number key', async ($, on) => {
   await start($, on)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  await ui.press({ key: 'calm-settings' })
+  await pressFooter($, 'calm-settings')
   expect((await ui.find({ key: 'tab-display' }))?.props.hotkey).toBe('1')
   expect(await ui.find({ key: 'set-hide' })).toBeDefined()
   expect(await ui.find({ key: 'set-music' })).toBeUndefined()
@@ -751,7 +766,7 @@ test('Reset puts every setting back but leaves the status line alone', { options
   })
   await start($, on)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  await ui.press({ key: 'calm-settings' })
+  await pressFooter($, 'calm-settings')
   await ui.press({ key: 'set-reset' })
   expect(writes.sort()).toEqual(['calm-mode.awayMinutes', 'calm-mode.cyberpunk', 'calm-mode.musicVolume'])
   expect((await ui.find({ key: 'set-cyber' }))?.props.label).toBe('○')
@@ -834,7 +849,7 @@ test('by default the weather shows beside the gear and refreshes every 15 minute
 test('the weather and the clock live in the Place & time tab', async ($, on) => {
   await start($, on)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  await ui.press({ key: 'calm-settings' })
+  await pressFooter($, 'calm-settings')
   expect(await ui.find({ key: 'set-weather' })).toBeUndefined()
   await ui.press({ key: 'tab-place' })
   expect(await ui.find({ key: 'set-clock' })).toBeDefined()
@@ -927,7 +942,7 @@ test('keep warm stops at the time given, and /calm keepwarm off stops it', async
 test('the Status line tab has a Keep warm switch that needs the cache meter', async ($, on) => {
   await start($, on)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  await ui.press({ key: 'calm-settings' })
+  await pressFooter($, 'calm-settings')
   await ui.press({ key: 'tab-status' })
   expect((await ui.find({ key: 'set-keepwarm' }))?.props.label).toBe('○')
   expect(await ui.find({ type: 'Text', text: /Needs Cache in status line/ })).toBeDefined()
@@ -1474,31 +1489,34 @@ test('the clock reads the date and 24-hour time in local time, and is on unless 
 test('on a narrow band the clock drops the date and the title gives way, so the job timer stays in view', async ($, on) => {
   await start($, on)
   await $.tool.call({ tool: PLAN_TOOL, steps: ['Read your notes', 'Build the page'] } as never)
-  const ui = await $.ui.mount({ ...BAND, props: { ...BAND.props, bodyColumns: 60 }, surface: 'terminal' })
+  const ui = await $.ui.mount({ ...BAND, props: { ...BAND.props, bodyColumns: 40 }, surface: 'terminal' })
   const clock = await ui.find({ type: 'Text', text: /^\d\d:\d\d +$/ })
   const title = await ui.find({ type: 'Text', text: /^Build my landing page/ })
   const timer = await ui.find({ type: 'Text', text: /^⏱ / })
   expect(clock).toBeDefined()
   expect(timer).toBeDefined()
-  // title, timer and clock leave room for the gear and the toggle (at least 12 columns) in 60
-  expect(String(title?.text).length + String(timer?.text).length + String(clock?.text).length).toBeLessThanOrEqual(60 - 12)
+  // title, timer and clock fit in 40 columns
+  expect(String(title?.text).length + String(timer?.text).length + String(clock?.text).length).toBeLessThanOrEqual(40)
   await ui.unmount()
 })
 
-test('the Calm button at the right of the footer opens and closes the settings panel', async ($, on) => {
+test('the footer holds the on/off button and ⚙, which opens and closes the settings panel', async ($, on) => {
   await start($, on)
-  const footer = await $.ui.mount({ plugin: 'calm-mode', component: 'SessionMode', props: { modes: [] }, surface: 'terminal' })
-  expect((await footer.find({ key: 'calm-footer' }))?.props.label).toBe('🍃 Calm ▾')
-  await footer.press({ key: 'calm-footer' })
-  await footer.unmount()
+  expect(await footerLabel($, 'calm-toggle')).toBe('🍃 Calm Mode ●')
+  expect(await footerLabel($, 'calm-settings')).toBe('⚙ ▾')
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ key: 'calm-settings' })).toBeUndefined()
+  expect(await band.find({ key: 'calm-toggle' })).toBeUndefined()
+  await band.unmount()
+  await pressFooter($, 'calm-settings')
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await ui.find({ key: 'tab-place' })).toBeDefined()
   await ui.unmount()
-  const again = await $.ui.mount({ plugin: 'calm-mode', component: 'SessionMode', props: { modes: [] }, surface: 'terminal' })
-  expect((await again.find({ key: 'calm-footer' }))?.props.label).toBe('🍃 Calm ▴')
-  await again.press({ key: 'calm-footer' })
-  await again.unmount()
+  expect(await footerLabel($, 'calm-settings')).toBe('⚙ ▴')
+  await pressFooter($, 'calm-settings')
   const closed = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await closed.find({ key: 'tab-place' })).toBeUndefined()
   await closed.unmount()
+  await pressFooter($, 'calm-toggle')
+  expect(await footerLabel($, 'calm-toggle')).toBe('🍃 Calm Mode ○')
 })

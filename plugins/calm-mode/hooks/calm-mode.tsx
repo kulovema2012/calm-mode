@@ -2626,27 +2626,35 @@ export function registerCalmMode(on: On, options?: unknown): void {
     return next(e)
   })
 
-  // A button at the right of the footer opens and closes the settings panel from anywhere; other plugins'
-  // footer entries (Calm Enhance's, say) and Claude Code's own mode labels stay beside it.
+  // Calm Mode's controls live at the right of the footer, beside Claude Code's mode labels and other plugins'
+  // footer entries (Calm Enhance's, say): the on/off button and ⚙, which opens and closes the settings panel.
   on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
     const below = await next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
     const settings = await read($, settingsAtom)
+    const isEnabled = await read($, enabledAtom)
     const isOpen = await read($, settingsOpenAtom)
-    const own = (
-      <Button
-        key="calm-footer"
-        label={`${settings.cyberpunk ? '🌃' : '🍃'} Calm ${isOpen ? '▴' : '▾'}`}
-        plain
-        dimColor={!isOpen}
-        onPress={() => update($, settingsOpenAtom, open => !open)}
-      />
-    )
+    const theme = settings.cyberpunk ? CYBERPUNK : CLASSIC
     return (
       <Box flexDirection="row">
         {below === null || below === undefined ? null : below}
         {below === null || below === undefined ? null : <Text>{'  '}</Text>}
-        {own}
+        <Button
+          key="calm-toggle"
+          label={toggleLabel(settings, isEnabled)}
+          plain
+          variant={settings.cyberpunk ? 'primary' : undefined}
+          dimColor={!isEnabled}
+          onPress={() => setEnabled($, !isEnabled)}
+        />
+        <Text> </Text>
+        <Button
+          key="calm-settings"
+          label={`${theme.gear} ${isOpen ? '▴' : '▾'}`}
+          plain
+          dimColor={!isOpen}
+          onPress={() => update($, settingsOpenAtom, open => !open)}
+        />
       </Box>
     )
   })
@@ -2660,6 +2668,9 @@ export function registerCalmMode(on: On, options?: unknown): void {
     const below = await next(e)
     const belowRows = below === null || below === undefined ? 0 : 1
     const own = await (async () => {
+    if (!(await read($, enabledAtom)) && !(await read($, settingsOpenAtom))) {
+      return null
+    }
 
     const elements = $.ui.resolve(e)
     const { Box, Text, Button } = elements
@@ -2688,7 +2699,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
     const titleWidth = list === null ? 0 : `${theme.headerMark}${theme.shout(list.title)}`.length + 1
     const headerNeed =
       list === null ? 0 : Math.min(3 + Math.max(6, Math.min(NAME_LIMIT, columns - 2 - 1 - METER_CELLS - 9)), titleWidth) + 10
-    const fixedWidth = theme.gear.length + 1 + label.length + 4
+    const fixedWidth = 0
     const layouts: Array<[string, string]> = [
       [cell(fullClock), cell(fullWeather)],
       [cell(fullClock.slice(-5)), cell(fullWeather)],
@@ -2709,21 +2720,6 @@ export function registerCalmMode(on: On, options?: unknown): void {
             {weatherCell}
           </Text>
         )}
-        <Button
-          key="calm-settings"
-          label={theme.gear}
-          plain
-          dimColor={!isSettingsOpen}
-          onPress={() => update($, settingsOpenAtom, isOpen => !isOpen)}
-        />
-        <Text> </Text>
-        <Button
-          key="calm-toggle"
-          label={label}
-          variant={settings.cyberpunk ? 'primary' : undefined}
-          dimColor={!isEnabled}
-          onPress={() => setEnabled($, !isEnabled)}
-        />
       </Box>
     )
     const buttonsWidth = clockCell.length + weatherCell.length + fixedWidth
@@ -3107,6 +3103,9 @@ export function registerCalmMode(on: On, options?: unknown): void {
       </Box>
     )
     })()
+    if (own === null) {
+      return below
+    }
     if (below === null || below === undefined) {
       return own
     }
