@@ -18,6 +18,23 @@ Do not make the Esc-brings-the-list-back change (the previous option 2).
 Also change the key that hides the list so it is a number key, as shown in this screenshot: [Image #3].
 ```
 
+## Install
+
+Run these in Claude Code (the first line only if you have not added the calm-mode marketplace yet):
+
+```
+/plugin marketplace add kulovema2012/calm-mode
+/plugin install calm-enhance@calm-mode
+```
+
+Then `/reload-plugins`. From a terminal: `claude plugin marketplace add kulovema2012/calm-mode` and `claude plugin install calm-enhance@calm-mode`. The installer may say "1 userConfig option not yet set": that is the model, and it uses Sonnet until you pick one (see Settings).
+
+To update later: `claude plugin marketplace update calm-mode`, then `claude plugin update calm-enhance@calm-mode`, then `/reload-plugins`.
+
+## While it works
+
+A slow wave of red, dark red, black and gray runs across your draft in the prompt box while the model rewrites it, and the band says **Enhancing with Sonnet…** (or Haiku). When the rewrite lands the wave stops and the new text replaces the draft. If you start typing, the wave stops at once and your typing wins: the rewrite is dropped and a toast says your version was kept. A draft too short to enhance flashes red instead.
+
 ## What it does to a draft
 
 - **Numbered picks become the real work.** "do 1 and 2", "the second one", "all three" or "yes" to an offer are written out as the options from Claude's last answer. The last answer gets extra room (6,000 characters) so a long list of options is not cut off.
@@ -50,7 +67,8 @@ The button shows once the draft has at least two words and ten characters, so "Y
 
 - One model call per press, through your own Claude Code account. It sends the draft and the last 10 messages (each up to 2,000 characters, the last reply up to 6,000, 16,000 in all; tool calls by name and file or command).
 - If you keep typing while it works, your version stays.
-- It works in the terminal. The desktop app draws its own prompt box, which a plugin cannot read or fill, so expect it not to work there.
+- It works in the terminal. The desktop app draws its own prompt box, which a plugin cannot read or fill, so expect it not to work there (no button press can reach the draft, and the wave cannot be drawn).
+- Pressing it again right after a rewrite gives **Revert**, which brings your draft back. Editing the rewritten text, or sending it, accepts the rewrite and the next press enhances again.
 - It draws its button below the other bands (Calm Mode, Calm Recap), never instead of them.
 
 ## Credit
