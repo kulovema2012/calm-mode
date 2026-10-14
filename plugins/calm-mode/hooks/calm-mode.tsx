@@ -1770,6 +1770,8 @@ type Theme = {
   empty: string
   gear: string
   sep: string
+  /** The character divider lines are drawn with: solid in Classic, dotted in Cyberpunk. */
+  rule: string
   headerMark: string
   labels: { done: string; next: string; later: string; working: string }
   title: string | undefined
@@ -1787,6 +1789,7 @@ const CLASSIC: Theme = {
   empty: '░',
   gear: '⚙',
   sep: ' · ',
+  rule: '─',
   headerMark: '',
   labels: { done: 'Done', next: 'Next', later: 'Up next', working: 'Working' },
   title: undefined,
@@ -1805,6 +1808,7 @@ const CYBERPUNK: Theme = {
   empty: '▱',
   gear: '⚙',
   sep: ' // ',
+  rule: '┄',
   headerMark: '◢◤ ',
   labels: { done: 'DONE', next: 'NEXT', later: 'QUEUED', working: 'WORKING' },
   title: '#ff2bd6',
@@ -1834,12 +1838,12 @@ export type LineKind = 'status' | 'heading' | 'point' | 'askedHeading' | 'asked'
 export type RecapLine = { kind: LineKind; text: string; color?: string; isBold?: boolean; isDim?: boolean; target?: string }
 
 /**
- * A section heading that is also its divider: "── WHAT CLAUDE DID ─────────". A separate rule line was the first
+ * A section heading that is also its divider: "── What Claude did ─────────", dotted in Cyberpunk. A separate rule line was the first
  * thing dropped when the band had few rows, so the sections ran together; built into the heading it always shows.
  */
-export function sectionRule(title: string, width: number): string {
-  const head = `── ${title} `
-  return head + '─'.repeat(Math.max(3, width - head.length - 1))
+export function sectionRule(title: string, width: number, rule = '─'): string {
+  const head = `${rule.repeat(2)} ${title} `
+  return head + rule.repeat(Math.max(3, width - head.length - 1))
 }
 
 /** Every line of the recap at `width` columns; `steps` adds the job's steps (the pane has room for them). */
@@ -1853,7 +1857,7 @@ export function recapLines(
   const textWidth = Math.max(16, width - 4)
   const heading = (kind: LineKind, text: string): RecapLine => ({
     kind,
-    text: sectionRule(theme.shout(text), width),
+    text: sectionRule(theme.shout(text), width, theme.rule),
     isBold: true,
     isDim: !isCyberpunk,
     color: isCyberpunk ? theme.accent : undefined,
@@ -2891,7 +2895,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
           <Button key="set-reset" label="Reset" dimColor onPress={() => resetSettings($)} />
         </Box>
         <Text dimColor color={settings.cyberpunk ? theme.title : undefined}>
-          {'─'.repeat(Math.max(4, Math.min(columns - 4, 80)))}
+          {theme.rule.repeat(Math.max(4, Math.min(columns - 4, 80)))}
         </Text>
         {tabRows[tab]}
         {tabInputs[tab]}
@@ -2913,7 +2917,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
         <Text key="next-loading" dimColor italic>{'  next steps…'}</Text>
       ) : nextItems.length === 0 ? null : (
         <Box key="next" flexDirection="column">
-          <Text dimColor color={settings.cyberpunk ? theme.title : undefined} wrap="truncate">{sectionRule(theme.shout('Next'), columns)}</Text>
+          <Text dimColor color={settings.cyberpunk ? theme.title : undefined} wrap="truncate">{sectionRule(theme.shout('Next'), columns, theme.rule)}</Text>
           {nextItems.map((item, i) => (
             <Box key={`next-${i}`} flexDirection="row" marginLeft={2}>
               <Button key={`next-take-${i}`} label={item.label} hotkey={String(i + 1)} plain onPress={() => takeNextStep($, item)} />
