@@ -1,6 +1,6 @@
 {
   "name": "calm-mode",
-  "version": "0.23.0",
+  "version": "0.24.0",
   "description": "Calm Mode: hides tool calls and shows one friendly checklist above the prompt while Claude works.",
   "author": {
     "name": "Newk"
@@ -113,6 +113,18 @@
       "title": "Cache in status line",
       "description": "Whether the cache meter is in your status line. Change it with the button in the settings row or /calm statusline on|off, which edit your status line for you.",
       "default": false
+    },
+    "autoKeepWarm": {
+      "type": "boolean",
+      "title": "Auto keep warm",
+      "description": "Turn keep warm on by itself after an answer once the chat holds this many tokens (Auto keep warm from). It stops after 3 pings in a row, about 3 hours away, and stays off for the session once you turn keep warm off. Needs the cache meter in your status line and the 1-hour cache.",
+      "default": false
+    },
+    "autoKeepWarmK": {
+      "type": "number",
+      "title": "Auto keep warm from (thousand tokens)",
+      "description": "The chat size, in thousands of tokens, at which auto keep warm turns on (10 to 500). Bigger chats cost more to rebuild, so keeping them warm saves more.",
+      "default": 50
     }
   }
 }

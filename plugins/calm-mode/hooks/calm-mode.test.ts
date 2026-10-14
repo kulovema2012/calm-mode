@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { clampVolume, cleanName, fitChecklist, keepWarmDecision, keepWarmUntil, resumeFromCacheState, parseWindowsLocation, isLocationFresh, parseMacLocation, weatherSymbol, weatherText, fitRecap, mayPlay, recapLines, stepAwayMinutes, fallbackPoints, parsePoints, parseCitedPoints, findRow, wrapText, musicCommand, nextTrack, trackName, windowsMusicScript, parseNextSteps, offeredNextSteps, cleanSuggestion, clockTime, normalizeSettings } from './calm-mode'
+import { clampVolume, cleanName, fitChecklist, keepWarmDecision, keepWarmUntil, resumeFromCacheState, parseWindowsLocation, isLocationFresh, parseMacLocation, weatherSymbol, weatherText, fitRecap, mayPlay, recapLines, stepAwayMinutes, fallbackPoints, parsePoints, parseCitedPoints, findRow, wrapText, musicCommand, nextTrack, trackName, windowsMusicScript, parseNextSteps, offeredNextSteps, cleanSuggestion, clockTime, normalizeSettings, shouldAutoKeepWarm, keepWarmMaxPings, stepAutoKeepWarmK } from './calm-mode'
 
 /** argv of every player the plugin started in the current test. */
 let spawned: string[][] = []
@@ -946,7 +946,98 @@ test('the Status line tab has a Keep warm switch that needs the cache meter', as
   await ui.press({ key: 'tab-status' })
   expect((await ui.find({ key: 'set-keepwarm' }))?.props.label).toBe('○')
   expect(await ui.find({ type: 'Text', text: /Needs Cache in status line/ })).toBeDefined()
+  expect((await ui.find({ key: 'set-autowarm' }))?.props.label).toBe('○')
+  expect(await ui.find({ key: 'autowarm-up' })).toBeDefined()
   await ui.unmount()
+})
+
+// ── Auto keep warm (v0.24.0) ────────────────────────────────────────────────
+
+test('auto keep warm turns on by chat size, only over a 1-hour cache, and never after the person said no', () => {
+  const on = { autoKeepWarm: true, autoKeepWarmK: 50 }
+  const hour = { ttl: '1h', expiresAt: 2000, warm: true }
+  expect(shouldAutoKeepWarm(on, null, 60_000, hour)).toBe(true)
+  expect(shouldAutoKeepWarm(on, null, 40_000, hour)).toBe(false)
+  expect(shouldAutoKeepWarm(on, null, undefined, hour)).toBe(false)
+  expect(shouldAutoKeepWarm({ ...on, autoKeepWarm: false }, null, 60_000, hour)).toBe(false)
+  expect(shouldAutoKeepWarm(on, null, 60_000, null)).toBe(false)
+  expect(shouldAutoKeepWarm(on, null, 60_000, { ...hour, ttl: '5m' })).toBe(false)
+  const off = { isOn: false, until: null, pings: 0, warmUntil: 0 }
+  expect(shouldAutoKeepWarm(on, { ...off, isOn: true }, 60_000, hour)).toBe(false)
+  expect(shouldAutoKeepWarm(on, { ...off, isDeclined: true }, 60_000, hour)).toBe(false)
+  // ran out of pings on its own: free to turn on again
+  expect(shouldAutoKeepWarm(on, off, 60_000, hour)).toBe(true)
+})
+
+test('auto keep warm stops after 3 pings, a manual one after 20; the size steps stay in range', () => {
+  expect(keepWarmMaxPings(null)).toBe(20)
+  expect(keepWarmMaxPings({ isOn: true, until: null, pings: 0, warmUntil: 0, isAuto: true })).toBe(3)
+  expect(stepAutoKeepWarmK(50, 1)).toBe(75)
+  expect(stepAutoKeepWarmK(50, -1)).toBe(30)
+  expect(stepAutoKeepWarmK(500, 1)).toBe(500)
+  expect(stepAutoKeepWarmK(10, -1)).toBe(10)
+  expect(stepAutoKeepWarmK(60, -1)).toBe(50)
+  expect(normalizeSettings({}).autoKeepWarm).toBe(false)
+  expect(normalizeSettings({ autoKeepWarmK: 9000 }).autoKeepWarmK).toBe(500)
+})
+
+function fakeUsage(on: On, tokens: number) {
+  on('session.usage', () => ({ value: { startedAt: 0, context: { tokens, window: 1_000_000 }, rateLimits: [] } }) as never)
+}
+
+test('auto keep warm turns on after an answer in a big chat and stops after 3 pings', { options: { autoKeepWarm: true } }, async ($, on) => {
+  const files = new Map<string, string>([['sess1.json', JSON.stringify({ ttl: '1h', expiresAt: (1_000_000 + 10 * 60_000) / 1000, warm: true })]])
+  fakeHome(on, files, 'sess1')
+  fakeUsage(on, 80_000)
+  let forks = 0
+  on('model.fork', () => {
+    forks += 1
+    return FORKED as never
+  })
+  const clock = await start($, on)
+  await $.turn.complete(FINISHED as never)
+  await clock.advance(0)
+  const kept = JSON.parse(files.get('sess1.keepwarm.json') ?? '{}')
+  expect(kept.isOn).toBe(true)
+  expect(toasts.some(t => /turned on by itself \(chat is 80k tokens\)/.test(t))).toBe(true)
+  // 3 pings, about an hour apart, then it stops
+  await clock.advance(6 * 60_000)
+  expect(forks).toBe(1)
+  await clock.advance(60 * 60_000)
+  await clock.advance(60 * 60_000)
+  expect(forks).toBe(3)
+  expect(JSON.parse(files.get('sess1.keepwarm.json') ?? '{}').isOn).toBe(false)
+  await clock.advance(60 * 60_000)
+  expect(forks).toBe(3)
+})
+
+test('auto keep warm leaves a small chat alone, and stays off once the person turns keep warm off', { options: { autoKeepWarm: true } }, async ($, on) => {
+  const files = new Map<string, string>([['sess1.json', JSON.stringify({ ttl: '1h', expiresAt: (1_000_000 + 30 * 60_000) / 1000, warm: true })]])
+  fakeHome(on, files, 'sess1')
+  let tokens = 20_000
+  on('session.usage', () => ({ value: { startedAt: 0, context: { tokens, window: 1_000_000 }, rateLimits: [] } }) as never)
+  const clock = await start($, on)
+  await $.turn.complete(FINISHED as never)
+  await clock.advance(0)
+  expect(files.has('sess1.keepwarm.json')).toBe(false)
+  tokens = 90_000
+  await $.turn.complete(FINISHED as never)
+  await clock.advance(0)
+  expect(JSON.parse(files.get('sess1.keepwarm.json') ?? '{}').isOn).toBe(true)
+  await $.command.run({ command: 'calm', args: 'keepwarm off' } as never)
+  await $.turn.complete(FINISHED as never)
+  await clock.advance(0)
+  expect(JSON.parse(files.get('sess1.keepwarm.json') ?? '{}').isOn).toBe(false)
+})
+
+test('auto keep warm is off by default', async ($, on) => {
+  const files = new Map<string, string>([['sess1.json', JSON.stringify({ ttl: '1h', expiresAt: 2000, warm: true })]])
+  fakeHome(on, files, 'sess1')
+  fakeUsage(on, 500_000)
+  const clock = await start($, on)
+  await $.turn.complete(FINISHED as never)
+  await clock.advance(0)
+  expect(files.has('sess1.keepwarm.json')).toBe(false)
 })
 
 // ── Resume without its SessionStart event (v0.15.1) ────────────────────────

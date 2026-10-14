@@ -122,7 +122,7 @@ Every switch is an icon, `◉` on and `○` off, each row says what it does, and
 | Place & time | Clock (date and time), Weather (your location), Weather city |
 | Music | Music, Volume, Track, Music file |
 | Recap | Away recap, Away after, Next steps, Recap style |
-| Status line | Cache in status line, Keep warm |
+| Status line | Cache in status line, Keep warm, Auto keep warm, Auto from |
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -233,6 +233,8 @@ Turn on **Keep warm** (Status line tab, or `/calm keepwarm on`) before you step 
 | `/calm keepwarm off` | Stop |
 
 It needs the cache meter in your status line (that is how it knows when the cache expires), only pings a 1-hour cache (on the 5-minute cache pinging would cost more than it saves), never wakes a cache that has already gone cold, and pauses while Claude is working. Each ping re-reads your conversation from the cache: far cheaper than rebuilding it, but it does count toward your plan's usage. The idea comes from [claude-code-cache-keep-warm](https://github.com/andreichiritescu/claude-code-cache-keep-warm) (MIT) by Andrei Chiritescu.
+
+**Auto keep warm** (Status line tab, off by default) turns keep warm on by itself after an answer once the chat holds enough tokens: 50k by default, set with **Auto from** (10k to 500k). Size decides rather than time, because a ping reads the cache for about a tenth of the chat's price while rebuilding an expired cache costs about twice it, so the bigger the chat, the more each ping saves. Since you did not ask for it, an automatic keep warm stops after 3 pings in a row (about 3 hours away) instead of 20, and your next message starts it again. Turn keep warm off yourself and it stays off for the rest of the session.
 
 The same settings appear in `/config` under Calm Mode, and the two always agree.
 
