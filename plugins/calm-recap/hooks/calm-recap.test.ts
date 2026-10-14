@@ -359,6 +359,25 @@ test('the Status line tab has a Keep warm switch', async ($, on) => {
   await ui.unmount()
 })
 
+// ── Dividers on the header and status rows (v0.13.2) ─────────────────────────
+
+test('fallback points keep short inline code as words and drop long code', () => {
+  expect(fallbackPoints('Dividers are dotted `┄┄ NEXT ┄┄` now.')).toEqual(['Dividers are dotted ┄┄ NEXT ┄┄ now.'])
+  expect(fallbackPoints(`Ran \`${'x'.repeat(41)}\` fine.`)).toEqual(['Ran fine.'])
+})
+
+test('the recap status row and header carry a divider line out to the edge', async ($, on) => {
+  await start($, on, [
+    { role: 'user', text: 'make the pricing cards blue' },
+    { role: 'assistant', text: ANSWER },
+  ])
+  await $.command.run({ command: 'recap', args: '' } as never)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /^✓ Answered.+ ─{3,}$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^ ─{3,}$/ })).toBeDefined()
+  await ui.unmount()
+})
+
 // ── Auto keep warm (v0.13.0) ───────────────────────────────────────────────
 
 test('auto keep warm turns on by chat size, only over a 1-hour cache, and never after the person said no', () => {

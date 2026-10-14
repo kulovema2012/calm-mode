@@ -429,10 +429,24 @@ test('the status-line button runs the installer and records the choice', async (
   await ui.unmount()
 })
 
-test('fallback points: first sentences without code or markdown', () => {
+test('fallback points: first sentences without code blocks or markdown, short inline code kept as words', () => {
   const answer = ['## Done', 'I fixed `src/a.ts`.', '```ts', 'const x = 1', '```', 'All good. Ship it! Extra.'].join(String.fromCharCode(10))
-  expect(fallbackPoints(answer)).toEqual(['Done I fixed .', 'All good.', 'Ship it!'])
+  expect(fallbackPoints(answer)).toEqual(['Done I fixed src/a.ts.', 'All good.', 'Ship it!'])
+  // A long code span is still dropped rather than read out.
+  expect(fallbackPoints(`Ran \`${'x'.repeat(41)}\` fine.`)).toEqual(['Ran fine.'])
+  expect(fallbackPoints('Dividers are dotted `┄┄ NEXT ┄┄` now.')).toEqual(['Dividers are dotted ┄┄ NEXT ┄┄ now.'])
   expect(fallbackPoints('')).toEqual(['Claude finished without a written reply.'])
+})
+
+test('the recap status row and header carry a divider line out to the edge', async ($, on) => {
+  on('session.messages', () => ({ value: [{ role: 'assistant', text: 'Done.', toolUses: [] }] }) as never)
+  const clock = await start($, on)
+  await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: 600 } as never)
+  await clock.advance(600)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /^↻ Resumed session ─{3,}$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^ ─{3,}$/ })).toBeDefined()
+  await ui.unmount()
 })
 
 test('Haiku points: dashes and numbers stripped, at most three, "Needs you" kept', () => {

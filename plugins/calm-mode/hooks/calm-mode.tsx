@@ -819,7 +819,7 @@ const NEEDS_YOU = /^needs you\s*[:\-–]\s*/i
 function plainText(answer: string): string {
   return answer
     .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/`[^`]*`/g, ' ')
+    .replace(/`([^`]*)`/g, (_match: string, code: string) => (code.length <= 40 ? code : ' '))
     .replace(/[#>*_|]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
@@ -1841,6 +1841,12 @@ export type RecapLine = { kind: LineKind; text: string; color?: string; isBold?:
  * A section heading that is also its divider: "── What Claude did ─────────", dotted in Cyberpunk. A separate rule line was the first
  * thing dropped when the band had few rows, so the sections ran together; built into the heading it always shows.
  */
+/** `text` with a divider line after it out to `width` ("↻ Resumed session ┄┄┄┄"); as it is when there is no room. */
+export function trailRule(text: string, width: number, rule = '─'): string {
+  const room = width - text.length - 2
+  return room >= 3 ? `${text} ${rule.repeat(room)}` : text
+}
+
 export function sectionRule(title: string, width: number, rule = '─'): string {
   const head = `${rule.repeat(2)} ${title} `
   return head + rule.repeat(Math.max(3, width - head.length - 1))
@@ -1874,12 +1880,12 @@ export function recapLines(
   const status: RecapLine = recap.isResumed
     ? {
         kind: 'status',
-        text: `↻ Resumed session${recap.isCacheCold ? `${theme.sep}cache expired, your next message re-reads everything` : ''}`,
+        text: trailRule(`↻ Resumed session${recap.isCacheCold ? `${theme.sep}cache expired, your next message re-reads everything` : ''}`, width, theme.rule),
         color: recap.isCacheCold ? theme.warn : theme.accent,
       }
     : {
         kind: 'status',
-        text: `${icon}${recap.title}${theme.sep}${outcome}${recap.stepsTotal > 0 ? `${theme.sep}${recap.stepsDone}/${recap.stepsTotal} steps` : ''}`,
+        text: trailRule(`${icon}${recap.title}${theme.sep}${outcome}${recap.stepsTotal > 0 ? `${theme.sep}${recap.stepsDone}/${recap.stepsTotal} steps` : ''}`, width, theme.rule),
         color: recap.phase === 'done' ? theme.done : theme.warn,
       }
   const points = recap.points.flatMap((point, index) => {
@@ -2944,12 +2950,18 @@ export function registerCalmMode(on: On, options?: unknown): void {
     if (recap !== null && recap.isShowing) {
       const awayFor = recap.awaySince === null || recap.isAsked === true ? '' : `${theme.sep}away ${theme.duration(now - recap.awaySince)}`
       const recapTick = await read($, tickAtom)
+      const headerTitle = `↩ ${theme.shout(recapHeading(recap))}${awayFor}`
+      // The divider runs on from the title to the clock and buttons, so the header reads as its own section.
+      const headerRule = theme.rule.repeat(Math.max(0, headerRoom - headerTitle.length - 2))
       const recapHeader = (
         <Box flexDirection="row" justifyContent="space-between" width={columns}>
-          <Box width={headerRoom}>
+          <Box width={headerRoom} flexDirection="row">
             <Text wrap="truncate" bold color={theme.title ?? theme.accent}>
-              {`↩ ${theme.shout(recapHeading(recap))}${awayFor}`}
+              {headerTitle}
             </Text>
+            {headerRule.length >= 3 ? (
+              <Text wrap="truncate" dimColor color={settings.cyberpunk ? theme.title : undefined}>{` ${headerRule}`}</Text>
+            ) : null}
           </Box>
           {buttons}
         </Box>
