@@ -19,6 +19,10 @@ export type RecapSettings = {
   nextSteps: boolean
   /** Show the time of day beside the weather in the band. */
   clock: boolean
+  /** Turn keep warm on by itself once the conversation is big enough to be worth keeping warm. */
+  autoKeepWarm: boolean
+  /** The context size, in thousands of tokens, at which auto keep warm turns on (10 to 500). */
+  autoKeepWarmK: number
 }
 
 /** One suggested next prompt: the short words on its button and the full prompt it sends. */
@@ -77,6 +81,10 @@ export type KeepWarm = {
   pings: number
   /** The cache stays warm until this time (milliseconds) thanks to the last ping. */
   warmUntil: number
+  /** Turned on by auto keep warm rather than by the person: stops after 3 pings instead of 20. */
+  isAuto?: boolean
+  /** The person turned it off this session, so auto keep warm leaves it off until they turn it on again. */
+  isDeclined?: boolean
 }
 
 declare module 'claude-code' {

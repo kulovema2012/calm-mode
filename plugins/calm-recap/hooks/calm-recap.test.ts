@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { offeredNextSteps, parseNextSteps, cleanTitle, fallbackPoints, fitRecap, keepWarmDecision, keepWarmUntil, parsePoints, parseCitedPoints, findRow, resumeFromCacheState, parseWindowsLocation, isLocationFresh, parseMacLocation, recapLines, stepAwayMinutes, toggleLabel, weatherSymbol, weatherText, wrapText, clockTime, normalizeSettings } from './calm-recap'
+import { offeredNextSteps, parseNextSteps, cleanTitle, fallbackPoints, fitRecap, keepWarmDecision, keepWarmUntil, parsePoints, parseCitedPoints, findRow, resumeFromCacheState, parseWindowsLocation, isLocationFresh, parseMacLocation, recapLines, stepAwayMinutes, toggleLabel, weatherSymbol, weatherText, wrapText, clockTime, normalizeSettings, shouldAutoKeepWarm, keepWarmMaxPings, stepAutoKeepWarmK } from './calm-recap'
 
 const BAND = {
   plugin: 'calm-recap',
@@ -75,7 +75,7 @@ test('helpers: points, wrapping, away steps and the theme icons', () => {
   expect(wrapText('one two three four five', 9)).toEqual(['one two', 'three', 'four five'])
   expect(stepAwayMinutes(5, 1)).toBe(10)
   expect(stepAwayMinutes(1, -1)).toBe(1)
-  const settings = { buttonLabel: 'Calm Recap', cyberpunk: false, awayMinutes: 5, recapStyle: 'band', cacheMeter: false, weather: true, weatherCity: '', jobNaming: true, nextSteps: true, clock: true } as const
+  const settings = { buttonLabel: 'Calm Recap', cyberpunk: false, awayMinutes: 5, recapStyle: 'band', cacheMeter: false, weather: true, weatherCity: '', jobNaming: true, nextSteps: true, clock: true, autoKeepWarm: false, autoKeepWarmK: 50 } as const
   expect(toggleLabel(settings, true)).toBe('🍃 Calm Recap ●')
   expect(toggleLabel({ ...settings, cyberpunk: true }, false)).toBe('🌃 CALM RECAP ⭘')
 })
@@ -355,6 +355,150 @@ test('the Status line tab has a Keep warm switch', async ($, on) => {
   await ui.press({ key: 'recap-settings' })
   await ui.press({ key: 'tab-status' })
   expect((await ui.find({ key: 'set-keepwarm' }))?.props.label).toBe('○')
+  await ui.unmount()
+})
+
+// ── Auto keep warm (v0.13.0) ───────────────────────────────────────────────
+
+test('auto keep warm turns on by chat size, only over a 1-hour cache, and never after the person said no', () => {
+  const on = { autoKeepWarm: true, autoKeepWarmK: 50 }
+  const hour = { ttl: '1h', expiresAt: 2000, warm: true }
+  expect(shouldAutoKeepWarm(on, null, 50_000, hour)).toBe(true)
+  expect(shouldAutoKeepWarm(on, null, 49_999, hour)).toBe(false)
+  expect(shouldAutoKeepWarm(on, null, undefined, hour)).toBe(false)
+  expect(shouldAutoKeepWarm({ ...on, autoKeepWarm: false }, null, 60_000, hour)).toBe(false)
+  expect(shouldAutoKeepWarm(on, null, 60_000, null)).toBe(false)
+  expect(shouldAutoKeepWarm(on, null, 60_000, { ...hour, ttl: '5m' })).toBe(false)
+  const off = { isOn: false, until: null, pings: 0, warmUntil: 0 }
+  expect(shouldAutoKeepWarm(on, { ...off, isOn: true }, 60_000, hour)).toBe(false)
+  expect(shouldAutoKeepWarm(on, { ...off, isDeclined: true }, 60_000, hour)).toBe(false)
+  expect(shouldAutoKeepWarm(on, off, 60_000, hour)).toBe(true)
+  expect(keepWarmMaxPings(null)).toBe(20)
+  expect(keepWarmMaxPings({ ...off, isOn: true, isAuto: true })).toBe(3)
+  expect(stepAutoKeepWarmK(50, 1)).toBe(75)
+  expect(stepAutoKeepWarmK(50, -1)).toBe(30)
+  expect(stepAutoKeepWarmK(500, 1)).toBe(500)
+  expect(stepAutoKeepWarmK(10, -1)).toBe(10)
+  expect(normalizeSettings({}).autoKeepWarm).toBe(false)
+  expect(normalizeSettings({ autoKeepWarmK: 9000 }).autoKeepWarmK).toBe(500)
+})
+
+/** Toasts raised when auto keep warm turned itself on. */
+const autoToasts = () => toasts.filter(t => /Keep warm turned on by itself/.test(t))
+
+function fakeTokens(on: On, tokens: () => number) {
+  on('session.usage', () => ({ value: { startedAt: 0, context: { tokens: tokens(), window: 1_000_000 }, rateLimits: [] } }) as never)
+}
+
+test('auto keep warm stops after 3 pings in a row and pings no more until the person sends a message', { options: { autoKeepWarm: true } }, async ($, on) => {
+  const files = new Map<string, string>([['s1.json', JSON.stringify({ ttl: '1h', expiresAt: (1_000_000 + 10 * 60_000) / 1000, warm: true })]])
+  fakeStateDir(on, files, 's1')
+  fakeTokens(on, () => 80_000)
+  let forks = 0
+  on('model.fork', () => {
+    forks += 1
+    return FORKED as never
+  })
+  const clock = await start($, on)
+  await finishTurn($)
+  await clock.advance(0)
+  expect(JSON.parse(files.get('s1.keepwarm.json') ?? '{}').isOn).toBe(true)
+  expect(autoToasts().length).toBe(1)
+  expect(autoToasts()[0]).toMatch(/chat is 80k tokens/)
+  // Ping 1 lands 5 minutes before the cache expires; each ping buys an hour, so the next is 55 minutes later.
+  await clock.advance(6 * 60_000)
+  expect(forks).toBe(1)
+  await clock.advance(55 * 60_000)
+  expect(forks).toBe(2)
+  await clock.advance(55 * 60_000)
+  expect(forks).toBe(3)
+  expect(JSON.parse(files.get('s1.keepwarm.json') ?? '{}').isOn).toBe(false)
+  expect(toasts.some(t => /Keep warm stopped after 3 pings in a row/.test(t))).toBe(true)
+  // Away for 5 hours: no more pings.
+  for (let hour = 0; hour < 5; hour += 1) {
+    await clock.advance(60 * 60_000)
+  }
+  expect(forks).toBe(3)
+  // Back: the status line records a fresh 1-hour cache from the new request, and auto keep warm starts again.
+  const back = 1_000_000 + (6 + 55 + 55 + 5 * 60) * 60_000
+  files.set('s1.json', JSON.stringify({ ttl: '1h', expiresAt: (back + 60 * 60_000) / 1000, warm: true }))
+  await finishTurn($)
+  await clock.advance(0)
+  expect(JSON.parse(files.get('s1.keepwarm.json') ?? '{}').isOn).toBe(true)
+  expect(autoToasts().length).toBe(2)
+  await clock.advance(56 * 60_000)
+  expect(forks).toBe(4)
+})
+
+test('auto keep warm toasts once at the default 50k size, not below it and not again while on', { options: { autoKeepWarm: true } }, async ($, on) => {
+  const files = new Map<string, string>([['s1.json', JSON.stringify({ ttl: '1h', expiresAt: (1_000_000 + 30 * 60_000) / 1000, warm: true })]])
+  fakeStateDir(on, files, 's1')
+  let tokens = 49_999
+  fakeTokens(on, () => tokens)
+  const clock = await start($, on)
+  await finishTurn($)
+  await clock.advance(0)
+  expect(autoToasts().length).toBe(0)
+  expect(files.has('s1.keepwarm.json')).toBe(false)
+  tokens = 50_000
+  await finishTurn($)
+  await clock.advance(0)
+  expect(autoToasts().length).toBe(1)
+  expect(autoToasts()[0]).toMatch(/chat is 50k tokens/)
+  tokens = 120_000
+  await finishTurn($)
+  await clock.advance(0)
+  expect(autoToasts().length).toBe(1)
+})
+
+test('auto keep warm with a custom 100k size stays quiet at 80k and toasts at 100k', { options: { autoKeepWarm: true, autoKeepWarmK: 100 } }, async ($, on) => {
+  const files = new Map<string, string>([['s1.json', JSON.stringify({ ttl: '1h', expiresAt: (1_000_000 + 30 * 60_000) / 1000, warm: true })]])
+  fakeStateDir(on, files, 's1')
+  let tokens = 80_000
+  fakeTokens(on, () => tokens)
+  const clock = await start($, on)
+  await finishTurn($)
+  await clock.advance(0)
+  expect(autoToasts().length).toBe(0)
+  tokens = 100_000
+  await finishTurn($)
+  await clock.advance(0)
+  expect(autoToasts().length).toBe(1)
+  expect(autoToasts()[0]).toMatch(/chat is 100k tokens/)
+})
+
+test('auto keep warm stays off once the person turns keep warm off', { options: { autoKeepWarm: true } }, async ($, on) => {
+  const files = new Map<string, string>([['s1.json', JSON.stringify({ ttl: '1h', expiresAt: (1_000_000 + 30 * 60_000) / 1000, warm: true })]])
+  fakeStateDir(on, files, 's1')
+  fakeTokens(on, () => 90_000)
+  const clock = await start($, on)
+  await finishTurn($)
+  await clock.advance(0)
+  expect(JSON.parse(files.get('s1.keepwarm.json') ?? '{}').isOn).toBe(true)
+  await $.command.run({ command: 'recap', args: 'keepwarm off' } as never)
+  await finishTurn($)
+  await clock.advance(0)
+  expect(JSON.parse(files.get('s1.keepwarm.json') ?? '{}').isOn).toBe(false)
+  expect(autoToasts().length).toBe(1)
+})
+
+test('auto keep warm is off by default', async ($, on) => {
+  const files = new Map<string, string>([['s1.json', JSON.stringify({ ttl: '1h', expiresAt: 2000, warm: true })]])
+  fakeStateDir(on, files, 's1')
+  fakeTokens(on, () => 500_000)
+  const clock = await start($, on)
+  await finishTurn($)
+  await clock.advance(0)
+  expect(files.has('s1.keepwarm.json')).toBe(false)
+})
+
+test('the Status line tab has Auto keep warm and its size', async ($, on) => {
+  await start($, on)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await ui.press({ key: 'recap-settings' })
+  await ui.press({ key: 'tab-status' })
+  expect((await ui.find({ key: 'set-autowarm' }))?.props.label).toBe('○')
+  expect(await ui.find({ key: 'autowarm-up' })).toBeDefined()
   await ui.unmount()
 })
 

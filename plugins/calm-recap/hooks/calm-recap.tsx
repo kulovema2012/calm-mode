@@ -25,6 +25,8 @@ export const DEFAULT_SETTINGS: RecapSettings = {
   jobNaming: true,
   nextSteps: true,
   clock: true,
+  autoKeepWarm: false,
+  autoKeepWarmK: 50,
 }
 
 export const enabledAtom = atom({ plugin: 'calm-recap', key: 'isEnabled' } as const, true)
@@ -89,6 +91,11 @@ export function normalizeSettings(options: unknown): RecapSettings {
     jobNaming: typeof raw.jobNaming === 'boolean' ? raw.jobNaming : DEFAULT_SETTINGS.jobNaming,
     nextSteps: typeof raw.nextSteps === 'boolean' ? raw.nextSteps : DEFAULT_SETTINGS.nextSteps,
     clock: typeof raw.clock === 'boolean' ? raw.clock : DEFAULT_SETTINGS.clock,
+    autoKeepWarm: typeof raw.autoKeepWarm === 'boolean' ? raw.autoKeepWarm : DEFAULT_SETTINGS.autoKeepWarm,
+    autoKeepWarmK:
+      typeof raw.autoKeepWarmK === 'number' && Number.isFinite(raw.autoKeepWarmK)
+        ? Math.round(Math.min(500, Math.max(10, raw.autoKeepWarmK)))
+        : DEFAULT_SETTINGS.autoKeepWarmK,
   }
 }
 
@@ -138,6 +145,8 @@ export const SETTING_HELP: Record<keyof RecapSettings, string> = {
   jobNaming: 'Haiku gives each job a short name',
   nextSteps: 'Up to 3 next prompts after each answer, keys 1 to 3',
   clock: 'Date and time beside the weather',
+  autoKeepWarm: 'Turns keep warm on once the chat is big, 3 pings',
+  autoKeepWarmK: 'Chat size that turns auto keep warm on',
 }
 
 const SETTING_NAMES: Record<keyof RecapSettings, string> = {
@@ -151,6 +160,8 @@ const SETTING_NAMES: Record<keyof RecapSettings, string> = {
   jobNaming: 'Job naming',
   nextSteps: 'Next steps',
   clock: 'Clock',
+  autoKeepWarm: 'Auto keep warm',
+  autoKeepWarmK: 'Auto from',
 }
 
 /** Every switch is an icon: ◉ on, ○ off. */
@@ -164,6 +175,8 @@ export function settingHint<K extends keyof RecapSettings>(field: K, value: Reca
         : 'Off'
       : field === 'awayMinutes'
         ? `${String(value)} minutes`
+        : field === 'autoKeepWarmK'
+          ? `${String(value)}k tokens`
         : field === 'recapStyle'
           ? value === 'pane'
             ? 'Pane'
@@ -231,6 +244,8 @@ const RESUME_FALLBACK_MS = 1500
 const KEEP_WARM_LEAD_MS = 5 * 60_000
 const KEEP_WARM_CHECK_MS = 60_000
 const KEEP_WARM_MAX_PINGS = 20
+/** Auto keep warm was not asked for, so it stops sooner: about 3 hours away. */
+const KEEP_WARM_AUTO_PINGS = 3
 const KEEP_WARM_TTL_MS = 60 * 60_000
 const KEEP_WARM_PROMPT = 'Keep-alive check from a plugin, not from the person. Reply with just: ok'
 
@@ -251,6 +266,36 @@ export function keepWarmDecision(
   const expiresAt = Math.max((state.expiresAt ?? 0) * 1000, warmUntil)
   if (expiresAt <= now) return 'cold'
   return expiresAt - now > KEEP_WARM_LEAD_MS ? 'wait' : 'ping'
+}
+
+/** How many pings in a row before keep warm stops: 20 when the person turned it on, 3 when it turned on by itself. */
+export function keepWarmMaxPings(keepWarm: KeepWarm | null): number {
+  return keepWarm?.isAuto === true ? KEEP_WARM_AUTO_PINGS : KEEP_WARM_MAX_PINGS
+}
+
+/**
+ * Whether auto keep warm should turn on now. Size decides, not time: a ping reads the cache for about a tenth of
+ * the context's price and rebuilding it costs about twice that, so the bigger the chat, the more a ping saves.
+ * Never on a 5-minute cache or without the status-line meter, never over keep warm already on, and never again
+ * this session once the person has turned it off.
+ */
+export function shouldAutoKeepWarm(
+  settings: Pick<RecapSettings, 'autoKeepWarm' | 'autoKeepWarmK'>,
+  keepWarm: KeepWarm | null,
+  contextTokens: number | undefined,
+  state: CacheState | null,
+): boolean {
+  if (!settings.autoKeepWarm || state === null || state.ttl !== '1h') return false
+  if (keepWarm?.isOn === true || keepWarm?.isDeclined === true) return false
+  return (contextTokens ?? 0) >= settings.autoKeepWarmK * 1000
+}
+
+/** The sizes the − and + buttons step through, in thousands of tokens; /config takes any value from 10 to 500. */
+const AUTO_KEEP_WARM_STEPS = [10, 20, 30, 50, 75, 100, 150, 200, 300, 500]
+
+export function stepAutoKeepWarmK(k: number, direction: 1 | -1): number {
+  const steps = direction === 1 ? AUTO_KEEP_WARM_STEPS : [...AUTO_KEEP_WARM_STEPS].reverse()
+  return steps.find(step => (direction === 1 ? step > k : step < k)) ?? k
 }
 
 /**
@@ -339,7 +384,7 @@ async function keepWarmTick($: Engine) {
   if (keepWarm === null || !keepWarm.isOn) return
   const now = await $.clock.now()
   if (keepWarm.until !== null && now >= keepWarm.until) {
-    await stopKeepWarm($, 'Keep warm stopped: the time you gave is up')
+    await stopKeepWarm($, 'Keep warm stopped: the time you gave is up', false)
     return
   }
   if (runtime.isTurnRunning) return
@@ -349,8 +394,10 @@ async function keepWarmTick($: Engine) {
   if (!reply.isAnswered || (reply.usage?.cache_read_input_tokens ?? 0) === 0) return
   const pings = keepWarm.pings + 1
   await writeKeepWarm($, { ...keepWarm, pings, warmUntil: now + KEEP_WARM_TTL_MS })
-  if (pings >= KEEP_WARM_MAX_PINGS) {
-    await stopKeepWarm($, `Keep warm stopped after ${KEEP_WARM_MAX_PINGS} pings in a row`)
+  const maxPings = keepWarmMaxPings(keepWarm)
+  if (pings >= maxPings) {
+    // Running out is not the person saying no: auto keep warm may turn on again after their next message.
+    await stopKeepWarm($, `Keep warm stopped after ${maxPings} pings in a row`, false)
   }
 }
 
@@ -374,12 +421,26 @@ async function startKeepWarm($: Engine, until: number | null) {
   )
 }
 
-async function stopKeepWarm($: Engine, message: string) {
+/** Turns keep warm off; `isDeclined` (the person switched it off) keeps auto keep warm away for the session. */
+async function stopKeepWarm($: Engine, message: string, isDeclined = true) {
   const current = await read($, keepWarmAtom)
-  await writeKeepWarm($, { isOn: false, until: null, pings: 0, warmUntil: current?.warmUntil ?? 0 })
+  await writeKeepWarm($, { isOn: false, until: null, pings: 0, warmUntil: current?.warmUntil ?? 0, isDeclined })
   runtime.keepWarmTimer?.cancel()
   runtime.keepWarmTimer = null
   $.ui.toast(message)
+}
+
+/** After each answer: turns keep warm on by itself once the chat is big enough (see shouldAutoKeepWarm). */
+async function autoKeepWarm($: Engine) {
+  const settings = await read($, settingsAtom)
+  if (!settings.autoKeepWarm) return
+  const current = await read($, keepWarmAtom)
+  const state = await readCacheState($).catch(() => null)
+  const tokens = (await $.session.usage().catch(() => undefined))?.context.tokens
+  if (!shouldAutoKeepWarm(settings, current, tokens, state)) return
+  await writeKeepWarm($, { isOn: true, until: null, pings: 0, warmUntil: current?.warmUntil ?? 0, isAuto: true })
+  ensureKeepWarmTimer($)
+  $.ui.toast(`Keep warm turned on by itself (chat is ${Math.round((tokens ?? 0) / 1000)}k tokens): up to ${KEEP_WARM_AUTO_PINGS} pings, ♨ in the status line`)
 }
 
 /** `/… keepwarm on|off|3h|90m|until 18:00`, answered as the command's output. */
@@ -1635,6 +1696,9 @@ export function registerCalmRecap(on: On, options?: unknown): void {
     if (job !== null) {
       await update($, lastJobAtom, () => ({ turnId: job.turnId, title: job.title, phase, tookMs: e.durationMs }))
     }
+    if (settings.autoKeepWarm) {
+      void autoKeepWarm($).catch(() => undefined)
+    }
     runtime.awayTimer?.cancel()
     runtime.awayTimer = $.clock.after(settings.awayMinutes * 60_000, () => {
       void showRecap($, { turnId: e.turnId, phase, tookMs: e.durationMs, awaySince: answeredAt }).catch(() => undefined)
@@ -1769,9 +1833,20 @@ export function registerCalmRecap(on: On, options?: unknown): void {
           ),
           about(
             settings.cacheMeter
-              ? `Pings before the 1h cache expires (${keepWarm?.isOn === true ? `${keepWarm.pings}/${KEEP_WARM_MAX_PINGS} pings` : 'this session'}), ♨ then 🔥`
+              ? `Pings before the 1h cache expires (${keepWarm?.isOn === true ? `${keepWarm.pings}/${keepWarmMaxPings(keepWarm)} pings${keepWarm.isAuto === true ? ', auto' : ''}` : 'this session'}), ♨ then 🔥`
               : 'Needs Cache in status line',
           ),
+        ),
+        row('r-autowarm', name('Auto keep warm', !settings.cacheMeter), toggle('set-autowarm', settings.autoKeepWarm, () => setOption($, 'autoKeepWarm', !settings.autoKeepWarm)), about(settings.cacheMeter ? SETTING_HELP.autoKeepWarm : 'Needs Cache in status line')),
+        row(
+          'r-autowarm-k',
+          name('Auto from', !settings.autoKeepWarm),
+          <Box flexDirection="row">
+            <Button key="autowarm-down" label="−" dimColor={!settings.autoKeepWarm} onPress={() => setOption($, 'autoKeepWarmK', stepAutoKeepWarmK(settings.autoKeepWarmK, -1))} />
+            <Text dimColor={!settings.autoKeepWarm}>{` ${settings.autoKeepWarmK}k `}</Text>
+            <Button key="autowarm-up" label="+" dimColor={!settings.autoKeepWarm} onPress={() => setOption($, 'autoKeepWarmK', stepAutoKeepWarmK(settings.autoKeepWarmK, 1))} />
+          </Box>,
+          about(SETTING_HELP.autoKeepWarmK),
         ),
       ],
     }
