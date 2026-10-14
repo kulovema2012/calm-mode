@@ -1,6 +1,6 @@
 {
   "name": "calm-mode",
-  "description": "Calm Mode for Claude Code: a friendly checklist instead of tool calls; Calm Recap: a Welcome back card and a prompt-cache meter on their own; Calm Aside: a read-only side chat about the session; Calm Enhance: an Enhance button that turns a short draft into a precise prompt.",
+  "description": "Calm Mode for Claude Code: a friendly checklist instead of tool calls; Calm Recap: a Welcome back card and a prompt-cache meter on their own; Calm Aside: a read-only side chat about the session; Calm Enhance: an Enhance button that turns a short draft into a precise prompt. Also lists four of Ray Amjad's mods (decision-tree, diagram-pane, transcript-redactor, secret-box), pulled from his repo so they keep his updates.",
   "owner": {
     "name": "Newk"
   },
@@ -20,6 +20,42 @@
     {
       "name": "calm-enhance",
       "source": "./plugins/calm-enhance"
+    },
+    {
+      "name": "decision-tree",
+      "description": "Ray Amjad's decision-tree, installed straight from github.com/ray-amjad/claude-code-mods; updates come from there",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/ray-amjad/claude-code-mods.git",
+        "path": "plugins/decision-tree"
+      }
+    },
+    {
+      "name": "diagram-pane",
+      "description": "Ray Amjad's diagram-pane, installed straight from github.com/ray-amjad/claude-code-mods; updates come from there",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/ray-amjad/claude-code-mods.git",
+        "path": "plugins/diagram-pane"
+      }
+    },
+    {
+      "name": "transcript-redactor",
+      "description": "Ray Amjad's transcript-redactor, installed straight from github.com/ray-amjad/claude-code-mods; updates come from there",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/ray-amjad/claude-code-mods.git",
+        "path": "plugins/transcript-redactor"
+      }
+    },
+    {
+      "name": "secret-box",
+      "description": "Ray Amjad's secret-box, installed straight from github.com/ray-amjad/claude-code-mods; updates come from there",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/ray-amjad/claude-code-mods.git",
+        "path": "plugins/secret-box"
+      }
     }
   ]
 }

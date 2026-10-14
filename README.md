@@ -77,6 +77,24 @@ The part after `@` is the marketplace's name. Install one of the two, not both: 
 /plugin install calm-enhance@calm-mode
 ```
 
+## Ray Amjad's mods, from the same marketplace
+
+This marketplace also lists four mods by [Ray Amjad](https://github.com/ray-amjad/claude-code-mods) (MIT). They are not copies: each entry points at Ray's own folder, so installing one fetches his code and a marketplace update brings his latest version. One marketplace covers everything, which keeps several Claude accounts simple.
+
+| Plugin | What it does |
+| --- | --- |
+| [decision-tree](https://github.com/ray-amjad/claude-code-mods/tree/main/plugins/decision-tree) | When Claude ends a reply with a question, explains the choice in a side pane and lets you explore any option in a forked session |
+| [diagram-pane](https://github.com/ray-amjad/claude-code-mods/tree/main/plugins/diagram-pane) | A side pane that pins every diagram Claude draws |
+| [transcript-redactor](https://github.com/ray-amjad/claude-code-mods/tree/main/plugins/transcript-redactor) | Keeps secrets and email addresses out of the session transcript |
+| [secret-box](https://github.com/ray-amjad/claude-code-mods/tree/main/plugins/secret-box) | Claude can use a secret without seeing it |
+
+```
+/plugin install decision-tree@calm-mode
+/plugin install diagram-pane@calm-mode
+/plugin install transcript-redactor@calm-mode
+/plugin install secret-box@calm-mode
+```
+
 ## Turn it on and off
 
 - Click **🍃 Calm Mode ●** at the right of the footer under the prompt, or
