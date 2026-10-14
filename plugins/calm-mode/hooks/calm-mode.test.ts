@@ -582,14 +582,14 @@ test('the live checklist has no frame', async ($, on) => {
   await ui.unmount()
 })
 
-test('the cyberpunk Welcome back card uses dashed neon rules and no frame', { options: { cyberpunk: true } }, async ($, on) => {
+test('the cyberpunk Welcome back card uses solid neon rules and no frame', { options: { cyberpunk: true } }, async ($, on) => {
   on('session.messages', () => ({ value: [{ role: 'assistant', text: 'Done.', toolUses: [] }] }) as never)
   const clock = await start($, on)
   await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: 600 } as never)
   await clock.advance(600)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect((await ui.findAll({ type: 'Box' })).some(box => box.props.borderStyle !== undefined)).toBe(false)
-  const rules = await ui.findAll({ type: 'Text', text: /^┄{20,}$/ })
+  const rules = await ui.findAll({ type: 'Text', text: /^─{20,}$/ })
   expect(rules.length).toBe(2)
   expect(rules[0]?.props.color).toBe('#ff2bd6')
   await ui.unmount()

@@ -1844,7 +1844,7 @@ export function recapLines(
   const textWidth = Math.max(16, width - 4)
   const rule: RecapLine = {
     kind: 'divider',
-    text: (isCyberpunk ? '┄' : '─').repeat(width),
+    text: '─'.repeat(width),
     color: isCyberpunk ? theme.title : undefined,
     isDim: true,
   }
@@ -2889,7 +2889,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
           <Button key="set-reset" label="Reset" dimColor onPress={() => resetSettings($)} />
         </Box>
         <Text dimColor color={settings.cyberpunk ? theme.title : undefined}>
-          {(settings.cyberpunk ? '┄' : '─').repeat(Math.max(4, Math.min(columns - 4, 80)))}
+          {'─'.repeat(Math.max(4, Math.min(columns - 4, 80)))}
         </Text>
         {tabRows[tab]}
         {tabInputs[tab]}
