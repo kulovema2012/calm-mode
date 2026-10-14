@@ -589,13 +589,13 @@ test('the cyberpunk Welcome back card uses solid neon rules and no frame', { opt
   await clock.advance(600)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect((await ui.findAll({ type: 'Box' })).some(box => box.props.borderStyle !== undefined)).toBe(false)
-  const rules = await ui.findAll({ type: 'Text', text: /^─{20,}$/ })
-  expect(rules.length).toBe(2)
-  expect(rules[0]?.props.color).toBe('#ff2bd6')
+  const rules = await ui.findAll({ type: 'Text', text: /^── [A-Z ]+ ─{3,}$/ })
+  expect(rules.length).toBe(1)
+  expect(rules[0]?.props.color).toBe('#00f0ff')
   await ui.unmount()
 })
 
-test('sections of the Welcome back card are split by thin rules', async ($, on) => {
+test('each section of the Welcome back card starts with a heading line', async ($, on) => {
   on('session.messages', () => ({
     value: [
       { role: 'user', text: 'make the pricing cards blue', toolUses: [] },
@@ -606,8 +606,8 @@ test('sections of the Welcome back card are split by thin rules', async ($, on) 
   await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: 600 } as never)
   await clock.advance(600)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  // under the header, after the status line, and before "You last asked"
-  expect((await ui.findAll({ type: 'Text', text: /^─{20,}$/ })).length).toBe(3)
+  // "Where you left off" and "You last asked", each drawn as its own divider line
+  expect((await ui.findAll({ type: 'Text', text: /^── (Where you left off|You last asked) ─{3,}$/ })).length).toBe(2)
   await ui.unmount()
 })
 
@@ -696,7 +696,7 @@ test('the band never scrolls: a short band shows the folded checklist', async ($
   await ui.unmount()
 })
 
-test('recap fitting drops rules, then the question, then extra points', () => {
+test('recap headings carry the divider, and fitting drops the question, then extra points', () => {
   const recap = {
     jobId: 1, title: 'Build the page', phase: 'done', tookMs: 60_000, stepsDone: 2, stepsTotal: 2,
     points: ['First point', 'Second point', 'Third point'], lastAsked: 'make it blue',
@@ -704,7 +704,8 @@ test('recap fitting drops rules, then the question, then extra points', () => {
   } as const
   const theme = { icons: { done: '✓ ', active: '▶ ', paused: '‖ ', upcoming: '○ ' }, sep: ' · ', shout: (t: string) => t, duration: () => '1m 0s', accent: 'claude', done: 'success', warn: 'warning', title: undefined } as never
   const all = recapLines({ ...recap, points: [...recap.points] }, theme, false, 60)
-  expect(all.map(l => l.kind)).toEqual(['divider', 'status', 'divider', 'heading', 'point', 'point', 'point', 'divider', 'askedHeading', 'asked'])
+  expect(all.map(l => l.kind)).toEqual(['status', 'heading', 'point', 'point', 'point', 'askedHeading', 'asked'])
+  expect(all[1]?.text).toBe(`── What Claude did ${'─'.repeat(60 - 19 - 1)}`)
   expect(fitRecap(all, 7).map(l => l.kind)).toEqual(['status', 'heading', 'point', 'point', 'point', 'askedHeading', 'asked'])
   expect(fitRecap(all, 5).map(l => l.kind)).toEqual(['status', 'heading', 'point', 'point', 'point'])
   expect(fitRecap(all, 3).map(l => l.kind)).toEqual(['status', 'heading', 'point'])
@@ -735,7 +736,7 @@ test('the recap pane shows the full card with the job steps', async ($, on) => {
     props: { title: 'Welcome back', isFocused: false, bodyColumns: 50, placement: 'dock', scroll: { offset: 0, bodyRows: 30 } },
   } as never)
   expect(await pane.find({ type: 'Text', text: /↩ Recap/ })).toBeDefined()
-  expect(await pane.find({ type: 'Text', text: /^Steps$/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /^── Steps ─{3,}$/ })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: /Read your notes/ })).toBeDefined()
   expect(await pane.find({ key: 'recap-pane-ok' })).toBeDefined()
   await pane.unmount()
@@ -1559,7 +1560,7 @@ test('next steps show after an answer, 1 drafts the first, and the next turn cle
   const idle = { ...BAND, props: { ...BAND.props, isWorking: false }, surface: 'terminal' } as const
   let ui = await $.ui.mount(idle)
   expect(nextStepAsks).toBe(1)
-  expect(await ui.find({ type: 'Text', text: /^Next$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^── Next ─{3,}$/ })).toBeDefined()
   expect(JSON.stringify(await ui.find({ key: 'next-take-0' }))).toContain('"hotkey":"1"')
   await ui.press({ key: 'next-take-0' })
   expect(filledPrompts).toEqual(['Run the tests for the pricing page'])

@@ -1828,10 +1828,19 @@ const CYBERPUNK: Theme = {
 
 export const RECAP_PANE = 'calm-recap'
 
-export type LineKind = 'divider' | 'status' | 'heading' | 'point' | 'askedHeading' | 'asked' | 'stepsHeading' | 'step'
+export type LineKind = 'status' | 'heading' | 'point' | 'askedHeading' | 'asked' | 'stepsHeading' | 'step'
 
 /** `target`: the chat row a linked line scrolls to; it ends in a ↗ (the last line of a point or of "You last asked"). */
 export type RecapLine = { kind: LineKind; text: string; color?: string; isBold?: boolean; isDim?: boolean; target?: string }
+
+/**
+ * A section heading that is also its divider: "── WHAT CLAUDE DID ─────────". A separate rule line was the first
+ * thing dropped when the band had few rows, so the sections ran together; built into the heading it always shows.
+ */
+export function sectionRule(title: string, width: number): string {
+  const head = `── ${title} `
+  return head + '─'.repeat(Math.max(3, width - head.length - 1))
+}
 
 /** Every line of the recap at `width` columns; `steps` adds the job's steps (the pane has room for them). */
 export function recapLines(
@@ -1842,15 +1851,9 @@ export function recapLines(
   steps: readonly ChecklistTask[] = [],
 ): RecapLine[] {
   const textWidth = Math.max(16, width - 4)
-  const rule: RecapLine = {
-    kind: 'divider',
-    text: '─'.repeat(width),
-    color: isCyberpunk ? theme.title : undefined,
-    isDim: true,
-  }
   const heading = (kind: LineKind, text: string): RecapLine => ({
     kind,
-    text: theme.shout(text),
+    text: sectionRule(theme.shout(text), width),
     isBold: true,
     isDim: !isCyberpunk,
     color: isCyberpunk ? theme.accent : undefined,
@@ -1891,16 +1894,16 @@ export function recapLines(
       }),
     )
   })
-  const lines: RecapLine[] = [rule, status, rule, heading('heading', recap.isResumed ? 'Where you left off' : 'What Claude did'), ...points]
+  const lines: RecapLine[] = [status, heading('heading', recap.isResumed ? 'Where you left off' : 'What Claude did'), ...points]
   if (steps.length > 0) {
-    lines.push(rule, heading('stepsHeading', 'Steps'))
+    lines.push(heading('stepsHeading', 'Steps'))
     for (const step of steps) {
       const mark = step.status === 'done' ? theme.icons.done : step.status === 'active' ? theme.icons.active : theme.icons.upcoming
       lines.push({ kind: 'step', text: `  ${mark}${step.name}`, color: step.status === 'done' ? theme.done : undefined, isDim: step.status === 'upcoming' })
     }
   }
   if (recap.lastAsked !== '') {
-    lines.push(rule, heading('askedHeading', 'You last asked'))
+    lines.push(heading('askedHeading', 'You last asked'))
     const askedTarget = recap.askedTarget ?? undefined
     const asked = wrapText(`“${recap.lastAsked}”`, askedTarget === undefined ? textWidth : textWidth - 2)
     asked.forEach((line, i) => {
@@ -1916,13 +1919,12 @@ export function recapLines(
 }
 
 /**
- * Fits the recap into `budget` rows, dropping the least useful lines first: the rules, then the steps, then what
+ * Fits the recap into `budget` rows, dropping the least useful lines first: the steps, then what
  * was asked, then all but the first point. The status line and one point always stay.
  */
 export function fitRecap(lines: readonly RecapLine[], budget: number): RecapLine[] {
   let kept = [...lines]
   const without = (kinds: readonly LineKind[]) => kept.filter(line => !kinds.includes(line.kind))
-  if (kept.length > budget) kept = without(['divider'])
   if (kept.length > budget) kept = without(['stepsHeading', 'step'])
   if (kept.length > budget) kept = without(['askedHeading', 'asked'])
   // then points from the end, always keeping the first
@@ -2911,7 +2913,7 @@ export function registerCalmMode(on: On, options?: unknown): void {
         <Text key="next-loading" dimColor italic>{'  next steps…'}</Text>
       ) : nextItems.length === 0 ? null : (
         <Box key="next" flexDirection="column">
-          <Text dimColor color={settings.cyberpunk ? theme.title : undefined}>{theme.shout('Next')}</Text>
+          <Text dimColor color={settings.cyberpunk ? theme.title : undefined} wrap="truncate">{sectionRule(theme.shout('Next'), columns)}</Text>
           {nextItems.map((item, i) => (
             <Box key={`next-${i}`} flexDirection="row" marginLeft={2}>
               <Button key={`next-take-${i}`} label={item.label} hotkey={String(i + 1)} plain onPress={() => takeNextStep($, item)} />
