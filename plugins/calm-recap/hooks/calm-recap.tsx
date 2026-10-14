@@ -826,18 +826,27 @@ async function dismissRecap($: Engine) {
   }
 }
 
-export type LineKind = 'divider' | 'status' | 'heading' | 'point' | 'askedHeading' | 'asked'
+export type LineKind = 'status' | 'heading' | 'point' | 'askedHeading' | 'asked'
 
 /** `target`: the chat row a linked line scrolls to; it ends in a ↗ (the last line of a point or of "You last asked"). */
 export type RecapLine = { kind: LineKind; text: string; color?: string; isBold?: boolean; isDim?: boolean; target?: string }
 
 /** Every line of the card at `width` columns, so the band and the pane draw the same thing. */
+/**
+ * A section heading that is also its divider: "── What Claude did ─────────", dotted in Cyberpunk. A separate rule
+ * line was the first thing dropped when the band had few rows, so the sections ran together; built into the heading
+ * it always shows.
+ */
+export function sectionRule(title: string, width: number, rule = '─'): string {
+  const head = `${rule.repeat(2)} ${title} `
+  return head + rule.repeat(Math.max(3, width - head.length - 1))
+}
+
 export function recapLines(recap: Recap, theme: Theme, isCyberpunk: boolean, width: number): RecapLine[] {
   const textWidth = Math.max(16, width - 4)
-  const rule: RecapLine = { kind: 'divider', text: theme.rule.repeat(width), color: isCyberpunk ? theme.title : undefined, isDim: true }
   const heading = (kind: LineKind, text: string): RecapLine => ({
     kind,
-    text: theme.shout(text),
+    text: sectionRule(theme.shout(text), width, theme.rule),
     isBold: true,
     isDim: !isCyberpunk,
     color: isCyberpunk ? theme.accent : undefined,
@@ -870,9 +879,9 @@ export function recapLines(recap: Recap, theme: Theme, isCyberpunk: boolean, wid
       }),
     )
   })
-  const lines: RecapLine[] = [rule, status, rule, heading('heading', recap.isResumed ? 'Where you left off' : 'What Claude did'), ...points]
+  const lines: RecapLine[] = [status, heading('heading', recap.isResumed ? 'Where you left off' : 'What Claude did'), ...points]
   if (recap.lastAsked !== '') {
-    lines.push(rule, heading('askedHeading', 'You last asked'))
+    lines.push(heading('askedHeading', 'You last asked'))
     const askedTarget = recap.askedTarget ?? undefined
     const asked = wrapText(`“${recap.lastAsked}”`, askedTarget === undefined ? textWidth : textWidth - 2)
     asked.forEach((line, i) => {
@@ -887,11 +896,10 @@ export function recapLines(recap: Recap, theme: Theme, isCyberpunk: boolean, wid
   return lines
 }
 
-/** Fits the card into `budget` rows: rules go first, then what was asked, then all but the first point. */
+/** Fits the card into `budget` rows: what was asked goes first, then all but the first point. */
 export function fitRecap(lines: readonly RecapLine[], budget: number): RecapLine[] {
   let kept = [...lines]
   const without = (kinds: readonly LineKind[]) => kept.filter(line => !kinds.includes(line.kind))
-  if (kept.length > budget) kept = without(['divider'])
   if (kept.length > budget) kept = without(['askedHeading', 'asked'])
   while (kept.length > budget) {
     const first = kept.findIndex(line => line.kind === 'point')
@@ -1895,7 +1903,7 @@ export function registerCalmRecap(on: On, options?: unknown): void {
         <Text key="next-loading" dimColor italic>{'  next steps…'}</Text>
       ) : nextItems.length === 0 ? null : (
         <Box key="next" flexDirection="column">
-          <Text dimColor color={settings.cyberpunk ? theme.title : undefined}>{theme.shout('Next')}</Text>
+          <Text dimColor color={settings.cyberpunk ? theme.title : undefined} wrap="truncate">{sectionRule(theme.shout('Next'), columns, theme.rule)}</Text>
           {nextItems.map((item, i) => (
             <Box key={`next-${i}`} flexDirection="row" marginLeft={2}>
               <Button key={`next-take-${i}`} label={item.label} hotkey={String(i + 1)} plain onPress={() => takeNextStep($, item)} />

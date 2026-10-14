@@ -187,14 +187,15 @@ test('pane style keeps one line with Open recap; the pane holds the card', { opt
   await pane.unmount()
 })
 
-test('the card fits a short band: rules, then the question, then extra points go', () => {
+test('headings carry the divider, and a short band drops the question, then extra points', () => {
   const recap = {
     turnId: 't', phase: 'done', tookMs: 60_000, points: ['One', 'Two', 'Three'], lastAsked: 'make it blue',
     awaySince: 0, isShowing: true, isResumed: false, isCacheCold: false,
   } as const
   const theme = { done: '✓ ', stopped: '■ ', sep: ' · ', rule: '─', shout: (t: string) => t, duration: () => '1m 0s', accent: 'claude', warn: 'warning', title: undefined } as never
   const all = recapLines({ ...recap, points: [...recap.points] }, theme, false, 60)
-  expect(all.map(l => l.kind)).toEqual(['divider', 'status', 'divider', 'heading', 'point', 'point', 'point', 'divider', 'askedHeading', 'asked'])
+  expect(all.map(l => l.kind)).toEqual(['status', 'heading', 'point', 'point', 'point', 'askedHeading', 'asked'])
+  expect(all[1]?.text).toBe(`── What Claude did ${'─'.repeat(60 - 19 - 1)}`)
   expect(fitRecap(all, 5).map(l => l.kind)).toEqual(['status', 'heading', 'point', 'point', 'point'])
   expect(fitRecap(all, 3).map(l => l.kind)).toEqual(['status', 'heading', 'point'])
 })
@@ -235,7 +236,7 @@ test('the status-line switch runs the installer', async ($, on) => {
   await ui.unmount()
 })
 
-test('cyberpunk: night-city button, neon dashed rules', { options: { cyberpunk: true } }, async ($, on) => {
+test('cyberpunk: night-city button, dotted neon heading lines', { options: { cyberpunk: true } }, async ($, on) => {
   await start($, on, [
     { role: 'user', text: 'make the pricing cards blue' },
     { role: 'assistant', text: ANSWER },
@@ -243,9 +244,9 @@ test('cyberpunk: night-city button, neon dashed rules', { options: { cyberpunk: 
   await $.command.run({ command: 'recap', args: '' } as never)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect((await ui.find({ key: 'recap-toggle' }))?.props.label).toBe('🌃 CALM RECAP ⏻')
-  const rules = await ui.findAll({ type: 'Text', text: /^┄{20,}$/ })
-  expect(rules.length).toBe(3)
-  expect(rules[0]?.props.color).toBe('#ff2bd6')
+  const rules = await ui.findAll({ type: 'Text', text: /^┄┄ [A-Z ]+ ┄{3,}$/ })
+  expect(rules.length).toBe(2)
+  expect(rules[0]?.props.color).toBe('#00f0ff')
   await ui.unmount()
 })
 
@@ -922,7 +923,7 @@ test('next steps show after a long answer, 1 drafts the first, and the next turn
   await clock.advance(1)
   let ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(nextStepAsks).toBe(1)
-  expect(await ui.find({ type: 'Text', text: /^Next$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^── Next ─{3,}$/ })).toBeDefined()
   expect(JSON.stringify(await ui.find({ key: 'next-take-0' }))).toContain('"hotkey":"1"')
   await ui.press({ key: 'next-take-0' })
   expect(filledPrompts).toEqual(['Here is the logo for the footer'])

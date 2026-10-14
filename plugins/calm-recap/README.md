@@ -4,14 +4,11 @@ The Welcome back card, the prompt-cache meter and the weather from [Calm Mode](.
 
 ```
 ↩ Welcome back · away 18m           📍 Bangkok ⛅ 31°C  ⚙ [ 🍃 Calm Recap ● ]
-────────────────────────────────────────────────────────────────
 ✓ Answered · took 1m 30s
-────────────────────────────────────────────────────────────────
-What Claude did
+── What Claude did ─────────────────────────────────────────────
   • Made the pricing cards blue
   ➜ Needs you: send the logo file for the footer
-────────────────────────────────────────────────────────────────
-You last asked
+── You last asked ──────────────────────────────────────────────
     "make the pricing cards blue"
                                             g: ✓ [ Got it (0 or g) ]
 ```
