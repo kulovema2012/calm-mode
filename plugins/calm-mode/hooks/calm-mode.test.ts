@@ -1030,6 +1030,92 @@ test('auto keep warm leaves a small chat alone, and stays off once the person tu
   expect(JSON.parse(files.get('sess1.keepwarm.json') ?? '{}').isOn).toBe(false)
 })
 
+/** Toasts raised when auto keep warm turned itself on. */
+const autoToasts = () => toasts.filter(t => /Keep warm turned on by itself/.test(t))
+
+test('auto keep warm stops after 3 pings in a row and pings no more until the person sends a message', { options: { autoKeepWarm: true } }, async ($, on) => {
+  const files = new Map<string, string>([['sess1.json', JSON.stringify({ ttl: '1h', expiresAt: (1_000_000 + 10 * 60_000) / 1000, warm: true })]])
+  fakeHome(on, files, 'sess1')
+  fakeUsage(on, 80_000)
+  let forks = 0
+  on('model.fork', () => {
+    forks += 1
+    return FORKED as never
+  })
+  const clock = await start($, on)
+  await $.turn.complete(FINISHED as never)
+  await clock.advance(0)
+  expect(JSON.parse(files.get('sess1.keepwarm.json') ?? '{}').isOn).toBe(true)
+  expect(autoToasts().length).toBe(1)
+  // Ping 1 lands 5 minutes before the cache expires; each ping buys an hour, so the next is 55 minutes later.
+  await clock.advance(6 * 60_000)
+  expect(forks).toBe(1)
+  expect(JSON.parse(files.get('sess1.keepwarm.json') ?? '{}').isOn).toBe(true)
+  await clock.advance(55 * 60_000)
+  expect(forks).toBe(2)
+  expect(JSON.parse(files.get('sess1.keepwarm.json') ?? '{}').isOn).toBe(true)
+  await clock.advance(55 * 60_000)
+  expect(forks).toBe(3)
+  expect(JSON.parse(files.get('sess1.keepwarm.json') ?? '{}').isOn).toBe(false)
+  expect(toasts.some(t => /Keep warm stopped after 3 pings in a row/.test(t))).toBe(true)
+  // The person is away for 5 hours: no more pings.
+  for (let hour = 0; hour < 5; hour += 1) {
+    await clock.advance(60 * 60_000)
+  }
+  expect(forks).toBe(3)
+  // The person comes back and sends a message; the status line records a fresh 1-hour cache from that request.
+  const back = 1_000_000 + (6 + 55 + 55 + 5 * 60) * 60_000
+  await $.turn.start({ text: 'I am back, what is next?', turnId: 't2' })
+  files.set('sess1.json', JSON.stringify({ ttl: '1h', expiresAt: (back + 60 * 60_000) / 1000, warm: true }))
+  await $.turn.complete({ ...FINISHED, turnId: 't2' } as never)
+  await clock.advance(0)
+  expect(JSON.parse(files.get('sess1.keepwarm.json') ?? '{}').isOn).toBe(true)
+  expect(autoToasts().length).toBe(2)
+  expect(forks).toBe(3)
+  await clock.advance(56 * 60_000)
+  expect(forks).toBe(4)
+})
+
+test('auto keep warm toasts once when the chat reaches the default 50k size, not below it and not again while on', { options: { autoKeepWarm: true } }, async ($, on) => {
+  const files = new Map<string, string>([['sess1.json', JSON.stringify({ ttl: '1h', expiresAt: (1_000_000 + 30 * 60_000) / 1000, warm: true })]])
+  fakeHome(on, files, 'sess1')
+  let tokens = 49_999
+  on('session.usage', () => ({ value: { startedAt: 0, context: { tokens, window: 1_000_000 }, rateLimits: [] } }) as never)
+  const clock = await start($, on)
+  await $.turn.complete(FINISHED as never)
+  await clock.advance(0)
+  expect(autoToasts().length).toBe(0)
+  expect(files.has('sess1.keepwarm.json')).toBe(false)
+  tokens = 50_000
+  await $.turn.complete(FINISHED as never)
+  await clock.advance(0)
+  expect(autoToasts().length).toBe(1)
+  expect(autoToasts()[0]).toMatch(/chat is 50k tokens/)
+  expect(JSON.parse(files.get('sess1.keepwarm.json') ?? '{}').isOn).toBe(true)
+  tokens = 120_000
+  await $.turn.complete(FINISHED as never)
+  await clock.advance(0)
+  expect(autoToasts().length).toBe(1)
+})
+
+test('auto keep warm with a custom 100k size stays quiet at 80k and toasts at 100k', { options: { autoKeepWarm: true, autoKeepWarmK: 100 } }, async ($, on) => {
+  const files = new Map<string, string>([['sess1.json', JSON.stringify({ ttl: '1h', expiresAt: (1_000_000 + 30 * 60_000) / 1000, warm: true })]])
+  fakeHome(on, files, 'sess1')
+  let tokens = 80_000
+  on('session.usage', () => ({ value: { startedAt: 0, context: { tokens, window: 1_000_000 }, rateLimits: [] } }) as never)
+  const clock = await start($, on)
+  await $.turn.complete(FINISHED as never)
+  await clock.advance(0)
+  expect(autoToasts().length).toBe(0)
+  expect(files.has('sess1.keepwarm.json')).toBe(false)
+  tokens = 100_000
+  await $.turn.complete(FINISHED as never)
+  await clock.advance(0)
+  expect(autoToasts().length).toBe(1)
+  expect(autoToasts()[0]).toMatch(/chat is 100k tokens/)
+  expect(JSON.parse(files.get('sess1.keepwarm.json') ?? '{}').isOn).toBe(true)
+})
+
 test('auto keep warm is off by default', async ($, on) => {
   const files = new Map<string, string>([['sess1.json', JSON.stringify({ ttl: '1h', expiresAt: 2000, warm: true })]])
   fakeHome(on, files, 'sess1')
