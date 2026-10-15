@@ -826,7 +826,7 @@ async function dismissRecap($: Engine) {
   }
 }
 
-export type LineKind = 'status' | 'heading' | 'point' | 'askedHeading' | 'asked'
+export type LineKind = 'divider' | 'status' | 'heading' | 'point' | 'askedHeading' | 'asked'
 
 /** `target`: the chat row a linked line scrolls to; it ends in a ↗ (the last line of a point or of "You last asked"). */
 export type RecapLine = { kind: LineKind; text: string; color?: string; isBold?: boolean; isDim?: boolean; target?: string }
@@ -837,12 +837,6 @@ export type RecapLine = { kind: LineKind; text: string; color?: string; isBold?:
  * line was the first thing dropped when the band had few rows, so the sections ran together; built into the heading
  * it always shows.
  */
-/** `text` with a divider line after it out to `width` ("↻ Resumed session ┄┄┄┄"); as it is when there is no room. */
-export function trailRule(text: string, width: number, rule = '─'): string {
-  const room = width - text.length - 2
-  return room >= 3 ? `${text} ${rule.repeat(room)}` : text
-}
-
 export function sectionRule(title: string, width: number, rule = '─'): string {
   const head = `${rule.repeat(2)} ${title} `
   return head + rule.repeat(Math.max(3, width - head.length - 1))
@@ -865,10 +859,10 @@ export function recapLines(recap: Recap, theme: Theme, isCyberpunk: boolean, wid
   const status: RecapLine = recap.isResumed
     ? {
         kind: 'status',
-        text: trailRule(`↻ Resumed session${recap.isCacheCold ? `${theme.sep}cache expired, your next message re-reads everything` : ''}`, width, theme.rule),
+        text: `↻ Resumed session${recap.isCacheCold ? `${theme.sep}cache expired, your next message re-reads everything` : ''}`,
         color: recap.isCacheCold ? theme.warn : theme.accent,
       }
-    : { kind: 'status', text: trailRule(outcome[recap.phase], width, theme.rule), color: recap.phase === 'done' ? theme.accent : theme.warn }
+    : { kind: 'status', text: outcome[recap.phase], color: recap.phase === 'done' ? theme.accent : theme.warn }
   const points = recap.points.flatMap((point, index) => {
     const needsYou = NEEDS_YOU.test(point)
     const text = needsYou ? `Needs you: ${point.replace(NEEDS_YOU, '')}` : point
@@ -885,7 +879,9 @@ export function recapLines(recap: Recap, theme: Theme, isCyberpunk: boolean, wid
       }),
     )
   })
-  const lines: RecapLine[] = [status, heading('heading', recap.isResumed ? 'Where you left off' : 'What Claude did'), ...points]
+  // Full lines under the header and under the status row set those two rows apart from the card.
+  const divider: RecapLine = { kind: 'divider', text: theme.rule.repeat(Math.max(3, width - 1)), color: isCyberpunk ? theme.title : undefined, isDim: true }
+  const lines: RecapLine[] = [divider, status, divider, heading('heading', recap.isResumed ? 'Where you left off' : 'What Claude did'), ...points]
   if (recap.lastAsked !== '') {
     lines.push(heading('askedHeading', 'You last asked'))
     const askedTarget = recap.askedTarget ?? undefined
@@ -902,11 +898,12 @@ export function recapLines(recap: Recap, theme: Theme, isCyberpunk: boolean, wid
   return lines
 }
 
-/** Fits the card into `budget` rows: what was asked goes first, then all but the first point. */
+/** Fits the card into `budget` rows: what was asked goes first, then the full divider lines, then all but the first point. */
 export function fitRecap(lines: readonly RecapLine[], budget: number): RecapLine[] {
   let kept = [...lines]
   const without = (kinds: readonly LineKind[]) => kept.filter(line => !kinds.includes(line.kind))
   if (kept.length > budget) kept = without(['askedHeading', 'asked'])
+  if (kept.length > budget) kept = without(['divider'])
   while (kept.length > budget) {
     const first = kept.findIndex(line => line.kind === 'point')
     const last = kept.map(line => line.kind).lastIndexOf('point')
@@ -1936,17 +1933,12 @@ export function registerCalmRecap(on: On, options?: unknown): void {
     if (recap !== null && recap.isShowing) {
       const recapTick = await read($, tickAtom)
       const headerTitle = `↩ ${theme.shout(recapHeading(recap))}${recap.awaySince === null || recap.isAsked === true ? '' : `${theme.sep}away ${theme.duration(now - recap.awaySince)}`}`
-      // The divider runs on from the title to the clock and buttons, so the header reads as its own section.
-      const headerRule = theme.rule.repeat(Math.max(0, headerRoom - headerTitle.length - 2))
       const header = (
         <Box flexDirection="row" justifyContent="space-between" width={columns}>
-          <Box width={headerRoom} flexDirection="row">
+          <Box width={headerRoom}>
             <Text wrap="truncate" bold color={theme.title ?? theme.accent}>
               {headerTitle}
             </Text>
-            {headerRule.length >= 3 ? (
-              <Text wrap="truncate" dimColor color={settings.cyberpunk ? theme.title : undefined}>{` ${headerRule}`}</Text>
-            ) : null}
           </Box>
           {buttons}
         </Box>

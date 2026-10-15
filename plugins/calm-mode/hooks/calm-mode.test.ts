@@ -438,14 +438,15 @@ test('fallback points: first sentences without code blocks or markdown, short in
   expect(fallbackPoints('')).toEqual(['Claude finished without a written reply.'])
 })
 
-test('the recap status row and header carry a divider line out to the edge', async ($, on) => {
+test('full divider lines sit under the recap header and under the status row', async ($, on) => {
   on('session.messages', () => ({ value: [{ role: 'assistant', text: 'Done.', toolUses: [] }] }) as never)
   const clock = await start($, on)
   await $.classic.SessionStart({ source: 'resume', seconds_since_last_response: 600 } as never)
   await clock.advance(600)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await ui.find({ type: 'Text', text: /^↻ Resumed session ─{3,}$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^ ─{3,}$/ })).toBeDefined()
+  // The status row is its own text now, with a full line above and below it.
+  expect(await ui.find({ type: 'Text', text: /^↻ Resumed session$/ })).toBeDefined()
+  expect((await ui.findAll({ type: 'Text', text: /^─{20,}$/ })).length).toBe(2)
   await ui.unmount()
 })
 
@@ -716,11 +717,13 @@ test('recap headings carry the divider, and fitting drops the question, then ext
     points: ['First point', 'Second point', 'Third point'], lastAsked: 'make it blue',
     awaySince: 0, isShowing: true, isResumed: false, isCacheCold: false,
   } as const
-  const theme = { icons: { done: '✓ ', active: '▶ ', paused: '‖ ', upcoming: '○ ' }, sep: ' · ', shout: (t: string) => t, duration: () => '1m 0s', accent: 'claude', done: 'success', warn: 'warning', title: undefined } as never
+  const theme = { icons: { done: '✓ ', active: '▶ ', paused: '‖ ', upcoming: '○ ' }, sep: ' · ', rule: '─', shout: (t: string) => t, duration: () => '1m 0s', accent: 'claude', done: 'success', warn: 'warning', title: undefined } as never
   const all = recapLines({ ...recap, points: [...recap.points] }, theme, false, 60)
-  expect(all.map(l => l.kind)).toEqual(['status', 'heading', 'point', 'point', 'point', 'askedHeading', 'asked'])
-  expect(all[1]?.text).toBe(`── What Claude did ${'─'.repeat(60 - 19 - 1)}`)
-  expect(fitRecap(all, 7).map(l => l.kind)).toEqual(['status', 'heading', 'point', 'point', 'point', 'askedHeading', 'asked'])
+  expect(all.map(l => l.kind)).toEqual(['divider', 'status', 'divider', 'heading', 'point', 'point', 'point', 'askedHeading', 'asked'])
+  expect(all[0]?.text).toBe('─'.repeat(59))
+  expect(all[3]?.text).toBe(`── What Claude did ${'─'.repeat(60 - 19 - 1)}`)
+  expect(fitRecap(all, 9).map(l => l.kind)).toEqual(['divider', 'status', 'divider', 'heading', 'point', 'point', 'point', 'askedHeading', 'asked'])
+  expect(fitRecap(all, 7).map(l => l.kind)).toEqual(['divider', 'status', 'divider', 'heading', 'point', 'point', 'point'])
   expect(fitRecap(all, 5).map(l => l.kind)).toEqual(['status', 'heading', 'point', 'point', 'point'])
   expect(fitRecap(all, 3).map(l => l.kind)).toEqual(['status', 'heading', 'point'])
 })

@@ -194,8 +194,10 @@ test('headings carry the divider, and a short band drops the question, then extr
   } as const
   const theme = { done: '✓ ', stopped: '■ ', sep: ' · ', rule: '─', shout: (t: string) => t, duration: () => '1m 0s', accent: 'claude', warn: 'warning', title: undefined } as never
   const all = recapLines({ ...recap, points: [...recap.points] }, theme, false, 60)
-  expect(all.map(l => l.kind)).toEqual(['status', 'heading', 'point', 'point', 'point', 'askedHeading', 'asked'])
-  expect(all[1]?.text).toBe(`── What Claude did ${'─'.repeat(60 - 19 - 1)}`)
+  expect(all.map(l => l.kind)).toEqual(['divider', 'status', 'divider', 'heading', 'point', 'point', 'point', 'askedHeading', 'asked'])
+  expect(all[0]?.text).toBe('─'.repeat(59))
+  expect(all[3]?.text).toBe(`── What Claude did ${'─'.repeat(60 - 19 - 1)}`)
+  expect(fitRecap(all, 7).map(l => l.kind)).toEqual(['divider', 'status', 'divider', 'heading', 'point', 'point', 'point'])
   expect(fitRecap(all, 5).map(l => l.kind)).toEqual(['status', 'heading', 'point', 'point', 'point'])
   expect(fitRecap(all, 3).map(l => l.kind)).toEqual(['status', 'heading', 'point'])
 })
@@ -366,15 +368,16 @@ test('fallback points keep short inline code as words and drop long code', () =>
   expect(fallbackPoints(`Ran \`${'x'.repeat(41)}\` fine.`)).toEqual(['Ran fine.'])
 })
 
-test('the recap status row and header carry a divider line out to the edge', async ($, on) => {
+test('full divider lines sit under the recap header and under the status row', async ($, on) => {
   await start($, on, [
     { role: 'user', text: 'make the pricing cards blue' },
     { role: 'assistant', text: ANSWER },
   ])
   await $.command.run({ command: 'recap', args: '' } as never)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect(await ui.find({ type: 'Text', text: /^✓ Answered.+ ─{3,}$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^ ─{3,}$/ })).toBeDefined()
+  // The status row is its own text now, with a full line above and below it.
+  expect(await ui.find({ type: 'Text', text: /^✓ Answered · took [^─]+$/ })).toBeDefined()
+  expect((await ui.findAll({ type: 'Text', text: /^─{20,}$/ })).length).toBe(2)
   await ui.unmount()
 })
 
