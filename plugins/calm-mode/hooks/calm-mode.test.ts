@@ -306,6 +306,16 @@ test('a music path cannot break out of the PowerShell string', () => {
   expect(script).toContain("[Uri]'C:/x''; Remove-Item C:/ -Recurse; ''.mp3'")
 })
 
+test('the Windows player watches the music lock and quits once its session lets go', () => {
+  const lock = { path: "C:\\Users\\o'k\\.claude\\calm-mode-music.json", owner: 'session-1' }
+  const script = windowsMusicScript('C:/song.mp3', 35, lock)
+  expect(script).toContain("Get-Content -Raw -LiteralPath 'C:\\Users\\o''k\\.claude\\calm-mode-music.json'")
+  expect(script).toContain("if ($lock.owner -ne 'session-1') { break }")
+  expect(script).toContain('TotalMilliseconds -gt 9000) { break }')
+  // Without a lock (no home folder) the player only follows Claude Code itself.
+  expect(windowsMusicScript('C:/song.mp3', 35)).not.toContain('$lock')
+})
+
 test('music plays while Claude works in cyberpunk', { options: { cyberpunk: true } }, async ($, on) => {
   await start($, on)
   expect(spawned.length).toBe(1)

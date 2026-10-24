@@ -596,9 +596,34 @@ function utf16leBase64(text: string): string {
   return btoa(bytes)
 }
 
-/** A looping, hidden player; the path is a single-quoted literal, so it cannot inject code. */
-export function windowsMusicScript(path: string, volume: number): string {
-  const quoted = `'${path.replace(/'/g, "''")}'`
+// The shared music lock is renewed every LEASE_MS; a lock older than STALE_MS is left behind.
+const LEASE_MS = 3000
+const STALE_MS = 9000
+
+/** A PowerShell single-quoted literal: nothing inside it runs. */
+const psQuote = (text: string) => `'${text.replace(/'/g, "''")}'`
+
+/**
+ * A looping, hidden player; the path is a single-quoted literal, so it cannot inject code.
+ *
+ * With `lock`, the player also watches the shared music lock and quits by itself once the lock names
+ * another owner (or none) or stops being renewed. Stopping the child from the module does not always
+ * reach it (a reload starts the module over and forgets the child), and a player left behind would
+ * play until Claude Code quits.
+ */
+export function windowsMusicScript(path: string, volume: number, lock?: { path: string; owner: string }): string {
+  const quoted = psQuote(path)
+  const watch =
+    lock === undefined
+      ? []
+      : [
+          '  try {',
+          `    $lock = Get-Content -Raw -LiteralPath ${psQuote(lock.path)} | ConvertFrom-Json`,
+          `    if ($lock.owner -ne ${psQuote(lock.owner)}) { break }`,
+          '    if ($lock.heartbeat -ne $beat) { $beat = $lock.heartbeat; $beatAt = Get-Date }',
+          '  } catch {}',
+          `  if (((Get-Date) - $beatAt).TotalMilliseconds -gt ${STALE_MS}) { break }`,
+        ]
   return [
     'Add-Type -AssemblyName PresentationCore',
     '$parent = (Get-CimInstance Win32_Process -Filter "ProcessId=$PID").ParentProcessId',
@@ -606,9 +631,12 @@ export function windowsMusicScript(path: string, volume: number): string {
     `$player.Open([Uri]${quoted})`,
     `$player.Volume = ${(clampVolume(volume) / 100).toFixed(2)}`,
     '$player.Play()',
+    '$beat = $null',
+    '$beatAt = Get-Date',
     'while ($true) {',
     '  Start-Sleep -Milliseconds 500',
     '  if (-not (Get-Process -Id $parent -ErrorAction SilentlyContinue)) { break }',
+    ...watch,
     '  if ($player.NaturalDuration.HasTimeSpan -and $player.Position -ge $player.NaturalDuration.TimeSpan) {',
     '    $player.Position = [TimeSpan]::Zero',
     '    $player.Play()',
@@ -620,7 +648,13 @@ export function windowsMusicScript(path: string, volume: number): string {
 }
 
 /** The command that loops `file` (empty: the built-in track) here, or null where $.audio.play does it. */
-export function musicCommand(root: string, file: string, volume: number, asset = 'sounds/neon-drive.wav'): string[] | null {
+export function musicCommand(
+  root: string,
+  file: string,
+  volume: number,
+  asset = 'sounds/neon-drive.wav',
+  lock?: { path: string; owner: string },
+): string[] | null {
   const level = clampVolume(volume)
   const isWindows = /^[A-Za-z]:[\\/]/.test(root)
   const isMac = root.startsWith('/Users/')
@@ -634,7 +668,7 @@ export function musicCommand(root: string, file: string, volume: number, asset =
       '-WindowStyle',
       'Hidden',
       '-EncodedCommand',
-      utf16leBase64(windowsMusicScript(path, level)),
+      utf16leBase64(windowsMusicScript(path, level, lock)),
     ]
   }
   if (isMac) {
@@ -646,8 +680,8 @@ export function musicCommand(root: string, file: string, volume: number, asset =
 }
 
 /** Starts the loop and hands back the way to stop it. */
-function startMusic($: Engine, file: string, volume: number, asset: string): () => void {
-  const argv = musicCommand($.plugin.root, file, volume, asset)
+function startMusic($: Engine, file: string, volume: number, asset: string, lock?: { path: string; owner: string }): () => void {
+  const argv = musicCommand($.plugin.root, file, volume, asset, lock)
   if (argv === null) {
     const controller = new AbortController()
     void $.audio
@@ -689,8 +723,6 @@ function pickTrack(choice: TrackChoice, jobId: number): string {
 // One player for every Claude session on this computer: a session that wants
 // music claims ~/.claude/calm-mode-music.json and renews it every few seconds;
 // the others stay quiet and take over once the owner lets go or stops renewing.
-const LEASE_MS = 3000
-const STALE_MS = 9000
 
 type MusicLock = { owner: string | null; heartbeat: number }
 
@@ -716,12 +748,12 @@ export function mayPlay(lock: MusicLock | null, me: string, now: number): boolea
   return lock === null || lock.owner === null || lock.owner === me || now - lock.heartbeat > STALE_MS
 }
 
-function ensurePlayer($: Engine, want: NonNullable<typeof runtime.musicWanted>) {
+function ensurePlayer($: Engine, want: NonNullable<typeof runtime.musicWanted>, lock?: { path: string; owner: string }) {
   if (runtime.music?.key === want.key) {
     return
   }
   runtime.music?.stop()
-  runtime.music = { key: want.key, stop: startMusic($, want.file, want.volume, want.asset) }
+  runtime.music = { key: want.key, stop: startMusic($, want.file, want.volume, want.asset, lock) }
 }
 
 function stopPlayer() {
@@ -747,7 +779,7 @@ async function claimMusic($: Engine) {
       await $.fs.write(path, JSON.stringify({ owner: me, heartbeat: now } satisfies MusicLock))
       // Two sessions may claim at once; the last write wins and the other backs off.
       if ((await readLock($, path))?.owner === me) {
-        ensurePlayer($, want)
+        ensurePlayer($, want, { path, owner: me })
         return
       }
     }
