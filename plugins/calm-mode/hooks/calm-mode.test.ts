@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { clampVolume, cleanName, fitChecklist, keepWarmDecision, keepWarmUntil, resumeFromCacheState, parseWindowsLocation, isLocationFresh, parseMacLocation, weatherSymbol, weatherText, fitRecap, mayPlay, recapLines, stepAwayMinutes, fallbackPoints, parsePoints, parseCitedPoints, findRow, wrapText, musicCommand, nextTrack, trackName, windowsMusicScript, parseNextSteps, offeredNextSteps, cleanSuggestion, clockTime, normalizeSettings, shouldAutoKeepWarm, keepWarmMaxPings, stepAutoKeepWarmK } from './calm-mode'
+import { clampVolume, cleanName, fitChecklist, keepWarmDecision, keepWarmUntil, resumeFromCacheState, parseWindowsLocation, isLocationFresh, parseMacLocation, weatherSymbol, weatherText, fitRecap, mayPlay, parseLock, recapLines, stepAwayMinutes, fallbackPoints, parsePoints, parseCitedPoints, findRow, wrapText, musicCommand, nextTrack, trackName, windowsMusicScript, parseNextSteps, offeredNextSteps, cleanSuggestion, clockTime, normalizeSettings, shouldAutoKeepWarm, keepWarmMaxPings, stepAutoKeepWarmK } from './calm-mode'
 
 /** argv of every player the plugin started in the current test. */
 let spawned: string[][] = []
@@ -306,12 +306,20 @@ test('a music path cannot break out of the PowerShell string', () => {
   expect(script).toContain("[Uri]'C:/x''; Remove-Item C:/ -Recurse; ''.mp3'")
 })
 
+test('a lock file with NUL bytes after the JSON still reads; junk reads as a free lock', () => {
+  expect(parseLock('{"owner":null,"heartbeat":0}\u0000\u0000\u0000\u0000')).toEqual({ owner: null, heartbeat: 0 })
+  expect(parseLock('{"owner":"s1","heartbeat":5} ')).toEqual({ owner: 's1', heartbeat: 5 })
+  expect(parseLock('\u0000\u0000')).toBeNull()
+  expect(parseLock('{"owner":"s1"')).toBeNull()
+})
+
 test('the Windows player watches the music lock and quits once its session lets go', () => {
   const lock = { path: "C:\\Users\\o'k\\.claude\\calm-mode-music.json", owner: 'session-1' }
   const script = windowsMusicScript('C:/song.mp3', 35, lock)
   expect(script).toContain("Get-Content -Raw -LiteralPath 'C:\\Users\\o''k\\.claude\\calm-mode-music.json'")
   expect(script).toContain("if ($lock.owner -ne 'session-1') { break }")
   expect(script).toContain('TotalMilliseconds -gt 9000) { break }')
+  expect(script).toContain("-replace '\\x00', ''")
   // Without a lock (no home folder) the player only follows Claude Code itself.
   expect(windowsMusicScript('C:/song.mp3', 35)).not.toContain('$lock')
 })

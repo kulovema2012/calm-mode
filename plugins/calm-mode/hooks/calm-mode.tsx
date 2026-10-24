@@ -618,7 +618,8 @@ export function windowsMusicScript(path: string, volume: number, lock?: { path: 
       ? []
       : [
           '  try {',
-          `    $lock = Get-Content -Raw -LiteralPath ${psQuote(lock.path)} | ConvertFrom-Json`,
+          // A rewrite can leave NUL bytes after the JSON; they are dropped before it is read.
+          `    $lock = ((Get-Content -Raw -LiteralPath ${psQuote(lock.path)}) -replace '\\x00', '') | ConvertFrom-Json`,
           `    if ($lock.owner -ne ${psQuote(lock.owner)}) { break }`,
           '    if ($lock.heartbeat -ne $beat) { $beat = $lock.heartbeat; $beatAt = Get-Date }',
           '  } catch {}',
@@ -735,12 +736,25 @@ async function lockPath($: Engine): Promise<string | undefined> {
   return [home, '.claude', 'calm-mode-music.json'].join(sep)
 }
 
+/**
+ * The lock as its JSON says, or null when the text is not a lock. A rewrite of the file can leave NUL bytes after
+ * the JSON; a lock that failed to parse used to make every session play on its own, unwatched, so junk now reads
+ * as a free lock that the next claim overwrites.
+ */
+export function parseLock(text: string): MusicLock | null {
+  try {
+    const parsed: unknown = JSON.parse(text.replace(/\u0000/g, '').trim())
+    return typeof parsed === 'object' && parsed !== null && 'heartbeat' in parsed ? (parsed as MusicLock) : null
+  } catch {
+    return null
+  }
+}
+
 async function readLock($: Engine, path: string): Promise<MusicLock | null> {
   if (!(await $.fs.exists(path))) {
     return null
   }
-  const parsed: unknown = JSON.parse(String(await $.fs.read(path)))
-  return typeof parsed === 'object' && parsed !== null ? (parsed as MusicLock) : null
+  return parseLock(String(await $.fs.read(path)))
 }
 
 /** Whether this session may play: the lock is its own, free, or left stale by a session that went away. */
